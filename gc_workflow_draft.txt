@@ -1,0 +1,990 @@
+# Kontekst projektu: GitOps / Observability as Code dla Grafana Cloud z GCX
+
+## 1. Cel
+
+Projektujemy skalowalny model self-service GitOps dla zasobów Grafana Cloud, przede wszystkim:
+
+- dashboardów,
+- alert rules,
+- folderów Grafany.
+
+Użytkownicy końcowi powinni móc tworzyć dashboardy i alerty głównie w UI Grafany, następnie eksportować je i wrzucać do repozytorium Git.
+
+Nie chcemy wymagać od użytkownika:
+
+- znajomości formatu manifestów GCX,
+- ręcznego zarządzania UID,
+- poprawiania referencji do folderów,
+- ręcznego tworzenia manifestów folderów,
+- ręcznego nazywania plików zgodnie ze standardem repo,
+- bezpośredniej obsługi Grafana API.
+
+Repozytorium Git ma być Source of Truth, natomiast automatyzacja pomiędzy PR i merge ma przekształcać "surowy" eksport Grafany do kanonicznej reprezentacji obsługiwanej przez GCX.
+
+---
+
+# 2. Ogólna architektura
+
+Docelowy flow:
+
+```text
+Grafana UI
+    │
+    │ export dashboard / alert rule
+    ▼
+User branch
+    │
+    │ dodanie eksportu do odpowiedniego katalogu
+    ▼
+Pull Request
+    │
+    ▼
+NORMALIZER / COMPILER
+    │
+    ├── wykrycie typu zasobu
+    ├── walidacja pliku
+    ├── określenie lokalizacji docelowej
+    ├── określenie folder hierarchy
+    ├── usunięcie starych referencji środowiskowych
+    ├── wygenerowanie UID folderów
+    ├── utworzenie brakujących manifestów Folder
+    ├── uzupełnienie referencji folderów
+    ├── normalizacja nazw plików
+    └── wygenerowanie kanonicznych manifestów GCX
+    │
+    ▼
+GCX validation / dry-run
+    │
+    ▼
+PR review
+    │
+    ▼
+merge
+    │
+    ▼
+GCX apply
+    │
+    ▼
+Grafana Cloud API
+```
+
+Istotna zasada architektoniczna:
+
+```text
+CUSTOM CODE = policy + normalization
+
+GCX = Grafana resource/API lifecycle
+```
+
+Nie chcemy implementować własnego klienta Grafana API do tworzenia dashboardów, folderów i alert rules, jeśli GCX może obsłużyć tę warstwę.
+
+---
+
+# 3. Odpowiedzialność użytkownika
+
+User powinien mieć bardzo prosty workflow.
+
+Przykładowo:
+
+```text
+1. Tworzy dashboard w Grafana UI
+2. Eksportuje dashboard
+3. Umieszcza eksport w odpowiedniej lokalizacji repo
+4. Robi commit/push
+5. Tworzy PR
+```
+
+Analogicznie dla alert rule.
+
+User nie powinien ręcznie zastanawiać się nad:
+
+```text
+folderUid
+uid
+metadata.name
+nazwą manifestu
+manifestem Folder
+różnicami UID DEV/TEST/PROD
+```
+
+To ma zrobić normalizer.
+
+---
+
+# 4. Repozytorium jako źródło prawdy
+
+Położenie zasobu w repo jest ważniejsze niż informacja zawarta w eksporcie.
+
+Przykład:
+
+```text
+teams/
+  payments/
+    Azure/
+      Kubernetes/
+```
+
+Jeżeli dashboard został wyeksportowany z innego folderu Grafany i posiada np.:
+
+```text
+folderUid = abc123
+```
+
+nie interesuje nas to UID.
+
+Normalizer określa folder na podstawie lokalizacji w repo.
+
+Czyli:
+
+```text
+repository path
+        ↓
+logical folder hierarchy
+        ↓
+generated Folder UID
+        ↓
+dashboard / alert rule reference
+```
+
+Repo definiuje strukturę, a nie środowisko, z którego pochodzi eksport.
+
+---
+
+# 5. Normalizer / Compiler
+
+Potrzebujemy własnego niewielkiego narzędzia, prawdopodobnie Python lub podobne rozwiązanie uruchamiane przez GitHub Actions.
+
+Nie implementuje ono komunikacji z Grafana API.
+
+Jego zadaniem jest transformacja:
+
+```text
+raw Grafana exports
+        ↓
+canonical GCX manifests
+```
+
+Normalizer powinien co najmniej:
+
+### Resource detection
+
+Rozpoznawać:
+
+- Dashboard
+- AlertRule / AlertRuleGroup
+- Folder
+- potencjalnie inne zasoby w przyszłości
+
+### Sanity / policy validation
+
+Sprawdzać m.in.:
+
+- poprawność struktury,
+- niedozwolone referencje,
+- duplicate resources,
+- collision UID,
+- duplicate names,
+- niewłaściwe umieszczenie zasobu,
+- inne polityki organizacyjne.
+
+### Environment cleanup
+
+Usuwać albo zastępować informacje pochodzące ze stacka, z którego wykonano export:
+
+- stary folder UID,
+- resource UID, jeśli powinien być zarządzany przez GitOps,
+- inne environment-specific references.
+
+### Naming
+
+Nazwa pliku powinna być generowana na podstawie resource title/name.
+
+Zamiast:
+
+```text
+export.json
+dashboard-182736.json
+alert-rule.yaml
+```
+
+repo powinno otrzymać przykładowo:
+
+```text
+azure-infrastructure.yaml
+payment-api-errors.yaml
+database-latency.yaml
+```
+
+W przypadku kolizji pipeline powinien się zatrzymać.
+
+Nie chcemy automatycznych nazw:
+
+```text
+dashboard-2.yaml
+dashboard-3.yaml
+```
+
+bo wynik przestaje być deterministyczny.
+
+---
+
+# 6. Foldery Grafana
+
+Folder hierarchy jest odwzorowaniem struktury katalogów repo.
+
+Przykład:
+
+```text
+Infra/
+  Azure/
+    Virtual Machines/
+```
+
+odpowiada hierarchii:
+
+```text
+Infra
+└── Azure
+    └── Virtual Machines
+```
+
+Jeżeli odpowiednich manifestów GCX Folder jeszcze nie ma, normalizer powinien je automatycznie utworzyć.
+
+User nie tworzy folder manifestów ręcznie.
+
+---
+
+# 7. Folder Title
+
+Title folderu pochodzi bezpośrednio z nazwy katalogu.
+
+Przykład:
+
+```text
+repo directory:
+Azure Infrastructure Cos tam
+
+Grafana Folder Title:
+Azure Infrastructure Cos tam
+```
+
+Nie ma potrzeby wykonywania slugification dla Title.
+
+Title jest reprezentacją human-readable.
+
+---
+
+# 8. Folder UID: kluczowa decyzja
+
+Pierwotnie rozważaliśmy używanie całej ścieżki, np.:
+
+```text
+Infra/Azure/Virtual Machines
+
+→
+
+infra--azure--virtual-machines
+```
+
+Problemem są jednak:
+
+- długość UID,
+- bardzo głębokie drzewa,
+- znaki specjalne,
+- trudniejsze reguły normalizacji,
+- potencjalne kolizje.
+
+Przykład problematycznej kolizji przy naiwnym slugowaniu:
+
+```text
+Infra/Azure/Cos tam
+
+vs.
+
+Infra/Azure/Cos/tam
+```
+
+Obie mogłyby naiwnie dać:
+
+```text
+infra-azure-cos-tam
+```
+
+Rozważaliśmy separator `--` między poziomami:
+
+```text
+Infra/Azure/Cos tam
+→ infra--azure--cos-tam
+
+Infra/Azure/Cos/tam
+→ infra--azure--cos--tam
+```
+
+ale przy dużych i głębokich strukturach UID robi się bardzo długie.
+
+---
+
+# 9. Preferowane rozwiązanie: deterministyczny hash ścieżki
+
+Aktualnie preferowany projekt:
+
+```text
+Folder UID = hash(canonical repository path)
+```
+
+Przykład:
+
+```text
+Infra/Azure/Cos tam
+```
+
+oraz:
+
+```text
+Infra/Azure/Cos/tam
+```
+
+muszą dawać zupełnie różne UID.
+
+Proponowany format:
+
+```text
+f-{truncated SHA-256}
+```
+
+np.:
+
+```text
+f-d81c923bd71821a491bc
+```
+
+Przykładowy algorytm:
+
+```text
+canonical_path =
+"Infra/Azure Infrastructure/Virtual Machines"
+
+SHA256(canonical_path)
+
+take first 20 hex characters
+
+UID =
+"f-" + hash
+```
+
+Daje to stałą długość UID niezależnie od głębokości folderu.
+
+Przykład:
+
+```text
+Infra/Azure/VM
+```
+
+i:
+
+```text
+Infrastructure/Cloud/Azure/Production/Compute/Virtual Machines
+```
+
+generują UID tej samej długości.
+
+---
+
+# 10. Wymagania wobec hash generation
+
+Algorytm musi być:
+
+- deterministyczny,
+- identyczny DEV/TEST/PROD,
+- niezależny od Grafana API,
+- niezależny od kolejności przetwarzania,
+- niezależny od innych folderów w repo,
+- stabilny między uruchomieniami pipeline.
+
+Nie należy używać:
+
+```text
+random UUID
+```
+
+ani:
+
+```text
+incrementing ID
+```
+
+ponieważ utracilibyśmy deterministyczność.
+
+Preferowany algorytm:
+
+```text
+SHA-256
+```
+
+z odpowiednio długim prefixem wyniku.
+
+---
+
+# 11. Canonical path
+
+Przed implementacją trzeba precyzyjnie ustalić definicję canonical path.
+
+Najbardziej prawdopodobny model:
+
+```text
+relative folder path from defined Grafana/team root
+```
+
+Przykładowo fizyczna ścieżka:
+
+```text
+teams/payments/folders/Infra/Azure/VM
+```
+
+może być hashowana jako:
+
+```text
+Infra/Azure/VM
+```
+
+albo, jeżeli namespace zespołu powinien należeć do identity:
+
+```text
+payments/Infra/Azure/VM
+```
+
+Ta druga opcja daje naturalny namespace między zespołami i prawdopodobnie jest bezpieczniejsza przy dużej skali.
+
+Nie powinny być częścią identity techniczne katalogi repo typu:
+
+```text
+folders
+incoming
+manifests
+generated
+```
+
+Canonicalization musi być jawnie zdefiniowana i pokryta testami.
+
+Należy również zdecydować zasady:
+
+- case sensitivity,
+- Unicode normalization, np. NFC,
+- trailing slash,
+- backslash vs slash,
+- whitespace,
+- identyczne nazwy różniące się jedynie wielkością liter.
+
+Nie należy agresywnie slugować ścieżki przed hash, bo:
+
+```text
+"Cos tam"
+```
+
+oraz różne struktury katalogów mają pozostać różnymi identities.
+
+---
+
+# 12. Zmiana ścieżki folderu
+
+Akceptujemy, że:
+
+```text
+Infra/Azure/VM
+```
+
+przeniesione do:
+
+```text
+Infra/Cloud/Azure/VM
+```
+
+otrzyma inne UID.
+
+Czyli:
+
+```text
+new path
+→ new hash
+→ new UID
+```
+
+Nie traktujemy tego obecnie jako problem.
+
+Model zakłada:
+
+```text
+path = identity
+```
+
+Przeniesienie folderu oznacza zmianę identity folderu.
+
+Nie potrzebujemy trwałego GUID przechowywanego osobno w repo.
+
+---
+
+# 13. Ważne: zasoby znajdujące się w folderze
+
+Przy przenoszeniu folderów musimy dokładnie zweryfikować zachowanie GCX/Grafana.
+
+Założeniem jest, że dashboard/alert manifests zostaną przepięte przez normalizer na nowy Folder UID.
+
+Nie należy jednak automatycznie zakładać, że usuwanie starego folderu jest bezpieczne, dopóki nie przetestujemy rzeczywistego lifecycle GCX dla:
+
+```text
+old Folder UID
+new Folder UID
+dashboard references
+alert rule references
+folder deletion
+```
+
+Ten scenariusz powinien mieć osobny integration test.
+
+---
+
+# 14. PR normalization
+
+Normalizer nie powinien modyfikować plików tylko tymczasowo w workspace GitHub Actions.
+
+Zmiana powinna znaleźć się w PR.
+
+Preferowany flow:
+
+```text
+user commit
+      ↓
+PR
+      ↓
+normalizer
+      ↓
+bot modifies files
+      ↓
+bot commit to PR branch
+      ↓
+GCX validation
+      ↓
+GCX dry-run
+      ↓
+PR review
+      ↓
+merge
+```
+
+Dzięki temu reviewer widzi dokładnie kanoniczne manifesty, które zostaną wdrożone.
+
+---
+
+# 15. Opcja incoming/
+
+Rozważamy także model:
+
+```text
+teams/
+  payments/
+    incoming/
+```
+
+User kopiuje eksport:
+
+```text
+incoming/export.json
+```
+
+Normalizer:
+
+1. odczytuje resource,
+2. ustala docelową strukturę,
+3. generuje canonical manifest,
+4. tworzy wymagane folder manifests,
+5. poprawia referencje,
+6. tworzy poprawną nazwę,
+7. usuwa raw export z `incoming/`,
+8. commituję wynik do PR.
+
+Przykład:
+
+```text
+BEFORE
+
+teams/payments/incoming/dashboard-928372.json
+```
+
+po normalizacji:
+
+```text
+AFTER
+
+teams/payments/Infra/Azure/dashboards/azure-overview.yaml
+
++ required Folder manifests
+```
+
+Jest to interesujący model, ponieważ `incoming/` staje się prostym interfejsem wejściowym dla użytkowników.
+
+---
+
+# 16. GCX jako deployment engine
+
+GCX powinien odpowiadać za:
+
+- interpretację canonical manifests,
+- validation,
+- dry-run tam, gdzie jest to bezpieczne,
+- apply,
+- komunikację z Grafana APIs,
+- obsługę lifecycle zasobów.
+
+Nie chcemy duplikować tego w Pythonie/PowerShellu.
+
+Schemat:
+
+```text
+Normalizer
+     │
+     ▼
+GCX manifests
+     │
+     ▼
+GCX
+     │
+     ▼
+Grafana API
+```
+
+---
+
+# 17. Ważne ryzyko: dry-run / validation
+
+Nie należy w projekcie automatycznie utożsamiać:
+
+```text
+gcx validate
+```
+
+z gwarantowanym read-only odpowiednikiem:
+
+```text
+terraform plan
+```
+
+Przed produkcyjnym użyciem trzeba zweryfikować zachowanie używanej wersji GCX i Grafany dla każdego zarządzanego typu zasobu.
+
+W CI należy:
+
+- przypiąć konkretną wersję GCX,
+- nie używać niekontrolowanego `latest`,
+- testować upgrade GCX,
+- testować zachowanie validation/dry-run na osobnym stacku testowym.
+
+---
+
+# 18. Policy enforcement
+
+Normalizer jest również miejscem na organizacyjne polityki, których sam GCX może nie egzekwować.
+
+Przykładowo:
+
+```text
+alert rule usera
+→ może znajdować się wyłącznie w jego team folder
+```
+
+lub:
+
+```text
+alert rule
+→ nie może referencjonować centralnego contact point
+```
+
+albo:
+
+```text
+dashboard
+→ datasource musi należeć do dozwolonego zestawu
+```
+
+Dzięki temu podział jest następujący:
+
+```text
+Normalizer:
+organizational policy
+
+GCX:
+resource validity + deployment
+
+Grafana:
+runtime authorization / RBAC
+```
+
+---
+
+# 19. Terraform pozostaje osobną warstwą
+
+Aktualny kierunek architektury:
+
+Terraform zarządza głównie zasobami platformowymi, np.:
+
+- teams,
+- RBAC,
+- role assignments,
+- team profiles,
+- folder permissions / ownership policy,
+- datasources,
+- contact points,
+- notification policy,
+- SSO,
+- konfiguracją platformy.
+
+Natomiast często zmieniające się artefakty tworzone przez użytkowników:
+
+```text
+dashboards
+alert rules
+folders wynikające z content hierarchy
+```
+
+mają być zarządzane przez:
+
+```text
+Git + Normalizer + GCX
+```
+
+Celem jest uniknięcie zarządzania setkami lub tysiącami dynamicznych dashboardów i alert rules przez Terraform.
+
+---
+
+# 20. Środowiska
+
+Istnieją osobne stacki/środowiska, np.:
+
+```text
+DEV
+TEST
+PROD
+```
+
+Ten sam folder musi mieć identyczne logiczne UID na każdym środowisku.
+
+Dlatego:
+
+```text
+UID = deterministic hash(repository path)
+```
+
+jest korzystniejsze niż UID wygenerowane przez Grafanę.
+
+Przykład:
+
+```text
+payments/Infra/Azure
+```
+
+zawsze musi wygenerować:
+
+```text
+f-xxxxxxxxxxxxxxxxxxxx
+```
+
+niezależnie od stacka.
+
+---
+
+# 21. Kluczowe własności całego projektu
+
+System powinien być:
+
+### Deterministyczny
+
+Ten sam Git tree daje ten sam zestaw manifestów.
+
+### Idempotentny
+
+Ponowne uruchomienie normalizera bez zmian wejścia nie zmienia repo.
+
+### Environment-independent
+
+Export DEV może zostać znormalizowany i zastosowany na TEST/PROD.
+
+### User-friendly
+
+User operuje:
+
+```text
+folder
+dashboard
+alert rule
+```
+
+a nie:
+
+```text
+UID
+metadata
+GCX schemas
+API
+```
+
+### Reviewable
+
+PR pokazuje faktyczny finalny stan manifestów.
+
+### Policy-driven
+
+Pipeline może odrzucić zasoby niezgodne ze standardami organizacji.
+
+---
+
+# 22. Testy, które powinny powstać bardzo wcześnie
+
+Minimalny zestaw unit/integration tests:
+
+```text
+Infra/Azure/Cos tam
+```
+
+vs:
+
+```text
+Infra/Azure/Cos/tam
+```
+
+muszą dawać różne UID.
+
+Dodatkowo:
+
+```text
+Infra/Azure
+infra/Azure
+```
+
+w zależności od przyjętej polityki case sensitivity.
+
+Polskie znaki:
+
+```text
+Środowisko/Usługi
+```
+
+Unicode normalization:
+
+```text
+różne reprezentacje Unicode tego samego wizualnego stringa
+```
+
+Bardzo długa ścieżka:
+
+```text
+A/B/C/D/E/F/G/H/I/J/...
+```
+
+powinna zawsze dawać UID prawidłowej długości.
+
+Ponowne uruchomienie:
+
+```text
+normalize(repo)
+normalize(repo)
+```
+
+nie może stworzyć kolejnych zmian.
+
+Test collision:
+
+```text
+hash1 == hash2
+```
+
+powinien kończyć pipeline błędem, nawet jeśli prawdopodobieństwo kolizji jest ekstremalnie małe.
+
+---
+
+# 23. Open questions do dalszego developmentu
+
+Do zaprojektowania pozostają przede wszystkim:
+
+1. Dokładna struktura repozytorium.
+2. Czy namespace teamu wchodzi do canonical path używanego do UID.
+3. Dokładna canonicalization ścieżki.
+4. Długość używanego fragmentu SHA-256.
+5. Finalny format Folder UID.
+6. Mapowanie raw Grafana export → GCX manifest.
+7. Obsługa istniejących UID dashboardów.
+8. Obsługa alert rule UID.
+9. Obsługa rename dashboardu.
+10. Obsługa rename/move folderu.
+11. Garbage collection zasobów usuniętych z Git.
+12. Zachowanie GCX przy usunięciu folderu zawierającego zasoby.
+13. Exact validation/dry-run workflow.
+14. Mechanizm bot commit na branch PR.
+15. Ochrona przed zapętlaniem GitHub Actions.
+16. Policy validation dla alert rules/contact points.
+17. Obsługa konfliktów nazw.
+18. Raportowanie normalizera w PR.
+19. Strategy dla backwards compatibility po zmianie algorytmu UID.
+20. Wersjonowanie schematu normalizera.
+
+---
+
+# 24. Najważniejsza zasada projektowa
+
+Myśl o normalizerze jak o małym compilerze.
+
+Input:
+
+```text
+human-managed Grafana content + repository structure
+```
+
+Intermediate model:
+
+```text
+canonical logical Grafana resources
+```
+
+Output:
+
+```text
+deterministic GCX manifests
+```
+
+Deployment:
+
+```text
+GCX → Grafana Cloud
+```
+
+Nie rozbudowuj normalizera w drugi system deploymentowy.
+
+Jeżeli zadanie dotyczy komunikacji z Grafana API i GCX potrafi już je wykonać, powinno pozostać odpowiedzialnością GCX.
+
+---
+
+# 25. Preferowany następny krok
+
+Zanim zaczniemy implementować GitHub Actions, należy zaprojektować **canonical repository model + canonical resource model**.
+
+W pierwszej kolejności proponuję ustalić:
+
+```text
+1. struktura katalogów repo
+2. interpretacja folder hierarchy
+3. canonical path
+4. algorytm Folder UID
+5. canonical model Dashboard
+6. canonical model AlertRule
+7. canonical model Folder
+8. transformation rules
+9. validation rules
+10. dopiero później GitHub Actions + GCX pipeline
+```
+
+Pierwszym konkretnym artefaktem developmentu powinien być mały, deterministyczny program:
+
+```text
+normalize <repository>
+```
+
+który dla repo testowego generuje zawsze dokładnie identyczny canonical output.
+
+Dopiero gdy ten kontrakt będzie stabilny, warto opakować go w GitHub Actions i podłączyć GCX.

@@ -1,0 +1,7 @@
+apiVersion: folder.grafana.app/v1beta1
+kind: Folder
+metadata:
+  name: f-e4cf85104e1623a54f63
+spec:
+  title: PRD - Infrastructure
+  description: ''

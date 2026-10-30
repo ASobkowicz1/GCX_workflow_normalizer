@@ -1,0 +1,221 @@
+name: Grafana Observability as Code (GCX)
+
+on:
+  # 1. Push na dowolny branch (zarówno roboczy branch użytkownika, jak i po merge do prd/dev/tech)
+  push:
+    paths:
+      - "data/**"
+      - "normalizer/**"
+      - ".github/workflows/grafana-observability.yml"
+  # 2. Pull Request otwierany do jednego z głównych branchy środowiskowych (prd, dev, tech)
+  pull_request:
+    branches:
+      - prd
+      - dev
+      - tech
+    paths:
+      - "data/**"
+      - "normalizer/**"
+      - ".github/workflows/grafana-observability.yml"
+
+# Kolejkowanie wdrożeń (FIFO) per branch, aby dwa szybkie merge'e do prd/dev/tech nie ścigały się na API Grafany
+concurrency:
+  group: gcx-${{ github.event_name }}-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write        # Wymagane do bot-commita znormalizowanych plików na branchu PR
+  pull-requests: write   # Wymagane do publikacji komentarza z planem zmian w PR
+  id-token: write        # Wymagane jeśli logujecie się do AWS przez OIDC (aws-actions/configure-aws-credentials)
+
+jobs:
+  observability:
+    name: GCX Plan / Deploy
+    runs-on: ubuntu-latest # Podmień na nazwę Waszego self-hosted runnera, np. [self-hosted, linux]
+    # Ochrona przed nieskończoną pętlą: nie uruchamiamy ponownie workflowu po commicie wykonanym przez bota
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      # KROK 1: Wyznaczenie zmiennej TARGET_ENV (prd / dev / tech) oraz gałęzi odniesienia (BASE_REF)
+      - name: Determine target environment (stack) and git branch variables
+        id: env_ctx
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # W Pull Requeście środowiskiem docelowym jest branch, DO którego robimy merge (np. prd, dev, tech)
+            TARGET_ENV="${{ github.base_ref }}"
+            CHECKOUT_REF="${{ github.head_ref }}"
+            BASE_REF="origin/${{ github.base_ref }}"
+            MODE="plan"
+          elif [[ "${{ github.ref_name }}" =~ ^(prd|dev|tech)$ ]]; then
+            # Push po Merge bezpośrednio na jeden z 3 branchy środowiskowych -> tryb DEPLOY
+            TARGET_ENV="${{ github.ref_name }}"
+            CHECKOUT_REF="${{ github.ref_name }}"
+            BASE_REF="${{ github.event.before }}"
+            MODE="deploy"
+          else
+            # Push na roboczy branch użytkownika (przed otwarciem PR) -> tryb PLAN (dry-run przeciwko dev)
+            # Jeśli user nazwie branch np. feat/prd-cos lub feat/tech-cos, wykryje odpowiednie środowisko, domyślnie: dev
+            if [[ "${{ github.ref_name }}" == *"prd"* ]]; then
+              TARGET_ENV="prd"
+            elif [[ "${{ github.ref_name }}" == *"tech"* ]]; then
+              TARGET_ENV="tech"
+            else
+              TARGET_ENV="dev"
+            fi
+            CHECKOUT_REF="${{ github.ref_name }}"
+            BASE_REF="origin/${TARGET_ENV}"
+            MODE="plan"
+          fi
+
+          echo "TARGET_ENV=${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+          echo "CHECKOUT_REF=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
+          echo "BASE_REF=${BASE_REF}" >> "$GITHUB_OUTPUT"
+          echo "MODE=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "🎯 Wykryty tryb: ${MODE} | Środowisko (stack): ${TARGET_ENV} | Base ref: ${BASE_REF}"
+
+      # KROK 2: Pobranie repozytorium z pełną historią (fetch-depth: 0 potrzebne dla git diff i git show)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.env_ctx.outputs.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      # KROK 3: Rozpakowanie tymczasowej binarki GCX (dopóki nie pojawi się w obrazie runnera)
+      - name: Setup GCX binary
+        run: |
+          if ! command -v gcx &> /dev/null; then
+            if [ -f ".github/bin/gcx-linux-amd64.tar.gz" ]; then
+              tar -xzf .github/bin/gcx-linux-amd64.tar.gz -C /usr/local/bin
+              chmod +x /usr/local/bin/gcx
+            elif [ -f "./gcx" ]; then
+              chmod +x ./gcx
+              sudo mv ./gcx /usr/local/bin/gcx
+            fi
+          fi
+          gcx --version
+
+      # KROK 4A: Assume Role w AWS przez OIDC (można użyć jednej roli lub roli zależnej od TARGET_ENV)
+      - name: Configure AWS Credentials (Assume Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-grafana-${{ steps.env_ctx.outputs.TARGET_ENV }}
+          aws-region: eu-central-1
+
+      # KROK 4B: Pobranie pojedynczego JSON-a konfiguracyjnego dla danego stacka (prd / dev / tech) z AWS SSM
+      - name: Fetch Grafana stack config JSON from AWS SSM and configure GCX
+        env:
+          TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
+        run: |
+          # Pojedynczy parametr w AWS SSM zawierający JSON (np. {"url": "...", "token": "...", "stack_id": "..."})
+          SSM_PARAM_PATH="/grafana/${TARGET_ENV}/config"
+
+          SSM_JSON=$(aws ssm get-parameter --name "${SSM_PARAM_PATH}" --with-decryption --query "Parameter.Value" --output text)
+
+          GRAFANA_URL=$(echo "${SSM_JSON}" | jq -r '.url')
+          GRAFANA_TOKEN=$(echo "${SSM_JSON}" | jq -r '.token')
+          GRAFANA_STACK_ID=$(echo "${SSM_JSON}" | jq -r '.stack_id')
+
+          # Maskowanie tokenu w logach GitHub Actions
+          echo "::add-mask::${GRAFANA_TOKEN}"
+
+          mkdir -p ~/.config/gcx
+          cat <<EOF > ~/.config/gcx/config.yaml
+          version: 1
+          current-context: ${TARGET_ENV}
+          contexts:
+            ${TARGET_ENV}:
+              stack: ${TARGET_ENV}
+          stacks:
+            ${TARGET_ENV}:
+              slug: ${TARGET_ENV}
+              grafana:
+                server: ${GRAFANA_URL}
+                token: "${GRAFANA_TOKEN}"
+                auth-method: token
+                stack-id: ${GRAFANA_STACK_ID}
+          EOF
+
+          gcx config check --context "${TARGET_ENV}"
+
+      # KROK 5: Instalacja zależności Pythona (tylko PyYAML)
+      - name: Setup Python & PyYAML
+        run: |
+          python3 -m pip install --quiet pyyaml
+
+      # KROK 6A: Tryb PLAN (dla brancha użytkownika oraz Pull Requesta)
+      - name: Run Normalizer & Plan (Dry-Run)
+        if: steps.env_ctx.outputs.MODE == 'plan'
+        env:
+          TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
+          BASE_REF: ${{ steps.env_ctx.outputs.BASE_REF }}
+        run: |
+          python3 -m normalizer plan \
+            --repo-root . \
+            --data-dir data \
+            --base-ref "${BASE_REF}" \
+            --gcx-bin gcx \
+            --context "${TARGET_ENV}" \
+            --summary-file plan.md
+
+      # KROK 6B: Bot Commit na gałęzi Pull Requesta (tylko w PR, gdy normalizer przekształcił surowe pliki)
+      - name: Commit normalized manifests back to PR branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(normalizer): normalize Grafana resources for ${{ steps.env_ctx.outputs.TARGET_ENV }}"
+            git push origin HEAD:${{ github.head_ref }}
+          else
+            echo "Brak nowych surowych plików do zacommitowania – manifesty są już kanoniczne."
+          fi
+
+      # KROK 6C: Publikacja komentarza z planem zmian (TF-style) w Pull Requeście
+      - name: Post Plan Summary comment on Pull Request
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('plan.md')) return;
+            const body = fs.readFileSync('plan.md', 'utf8');
+            const marker = '<!-- gcx-normalizer-plan -->';
+            const fullBody = `${marker}\n### 🎯 Target Stack: \`${{ steps.env_ctx.outputs.TARGET_ENV }}\`\n\n${body}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: fullBody,
+              });
+            }
+
+      # KROK 7: Tryb DEPLOY (wykonywany wyłącznie po Merge na gałęziach prd / dev / tech)
+      - name: Run Diff Deploy (Apply on Grafana Cloud)
+        if: steps.env_ctx.outputs.MODE == 'deploy'
+        env:
+          TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
+          BASE_REF: ${{ steps.env_ctx.outputs.BASE_REF }}
+        run: |
+          python3 -m normalizer deploy \
+            --repo-root . \
+            --data-dir data \
+            --base-ref "${BASE_REF}" \
+            --target-ref "${{ github.sha }}" \
+            --gcx-bin gcx \
+            --context "${TARGET_ENV}"

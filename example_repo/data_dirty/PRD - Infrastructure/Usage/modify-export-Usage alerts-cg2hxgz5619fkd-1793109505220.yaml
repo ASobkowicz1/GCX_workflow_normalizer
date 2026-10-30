@@ -1,0 +1,62 @@
+apiVersion: 1
+groups:
+    - orgId: 1
+      name: Usage alerts
+      folder: Dash_test1
+      interval: 1m
+      rules:
+        - uid: cg2hxgz5619fkd
+          title: Usage alert
+          condition: C
+          data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: grafanacloud-usage
+              model:
+                datasource:
+                    type: prometheus
+                    uid: grafanacloud-usage
+                editorMode: code
+                expr: grafanacloud_grafana_instance_active_users
+                instant: true
+                intervalMs: 1000
+                legendFormat: __auto
+                maxDataPoints: 43200
+                range: false
+                refId: A
+            - refId: C
+              queryType: expression
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 2
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: Error
+          for: 1m
+          annotations: {}
+          labels: {}
+          isPaused: false
+          notification_settings:
+            receiver: empty

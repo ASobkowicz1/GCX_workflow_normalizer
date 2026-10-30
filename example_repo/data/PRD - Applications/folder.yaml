@@ -1,0 +1,7 @@
+apiVersion: folder.grafana.app/v1beta1
+kind: Folder
+metadata:
+  name: f-2a177fb579c9f7bf55bf
+spec:
+  title: PRD - Applications
+  description: ''

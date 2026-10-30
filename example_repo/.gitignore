@@ -1,0 +1,20 @@
+# Śmieci systemowe (macOS / Windows / Linux)
+.DS_Store                                    
+Thumbs.db
+*~       
+    
+# Python & środowiska wirtualne
+__pycache__/
+*.py[cod]   
+.venv/   
+venv/ 
+.env
+.pytest_cache/
+.ruff_cache/
+
+# Binarki GCX i pliki tymczasowe planu / 
+snapshotów
+gcx
+gcx.exe
+plan.md
+snapshots/

@@ -1,0 +1,182 @@
+import json
+import shutil
+from pathlib import Path
+
+import yaml
+
+from normalizer.models import IssueSeverity
+from normalizer.reconciler import reconcile_data_directory
+
+
+def test_reconcile_example_repo_copy(tmp_path: Path) -> None:
+    """Kopiuje brudne pliki z example_repo/data_dirty do tmp_path i sprawdza pełną normalizację + idempotentność."""
+    test_data = tmp_path / "data"
+    shutil.copytree("example_repo/data_dirty", test_data)
+
+    # 1. Pierwsze uruchomienie: normalizacja surowych plików
+    res1 = reconcile_data_directory(test_data)
+    assert not res1.has_errors
+    assert len(res1.issues) == 0
+
+    # Surowe pliki .json i modify-export-*.yaml powinny zostać usunięte
+    assert not (test_data / "PRD - Applications" / "Series active-1793109192093.json").exists()
+    assert not (
+        test_data / "PRD - Infrastructure" / "Usage" / "Active users-1793109129935.json"
+    ).exists()
+    assert not (
+        test_data
+        / "PRD - Infrastructure"
+        / "Usage"
+        / "modify-export-Usage alerts-cg2hxgz5619fkd-1793109505220.yaml"
+    ).exists()
+
+    # Pliki readme.md powinny pozostać nietknięte
+    assert (test_data / "readme.md").exists()
+    assert (test_data / "PRD - Infrastructure" / "Usage" / "readme.md").exists()
+
+    # Kanoniczne pliki zasobów (d-* / a-*) oraz folder.yaml muszą istnieć
+    assert (test_data / "PRD - Applications" / "folder.yaml").exists()
+    assert (test_data / "PRD - Applications" / "d-series-active.yaml").exists()
+    assert (test_data / "PRD - Infrastructure" / "folder.yaml").exists()
+    assert (test_data / "PRD - Infrastructure" / "Usage" / "folder.yaml").exists()
+    assert (test_data / "PRD - Infrastructure" / "Usage" / "d-active-users.yaml").exists()
+    assert (test_data / "PRD - Infrastructure" / "Usage" / "a-usage-alert.yaml").exists()
+
+    # Sprawdźmy relację rodzic-dziecko pomiędzy folderami PRD - Infrastructure -> Usage
+    parent_folder = yaml.safe_load(
+        (test_data / "PRD - Infrastructure" / "folder.yaml").read_text(encoding="utf-8")
+    )
+    child_folder = yaml.safe_load(
+        (test_data / "PRD - Infrastructure" / "Usage" / "folder.yaml").read_text(encoding="utf-8")
+    )
+    assert "annotations" not in parent_folder["metadata"]
+    assert (
+        child_folder["metadata"]["annotations"]["grafana.app/folder"]
+        == parent_folder["metadata"]["name"]
+    )
+
+    # 2. Drugie uruchomienie na tym samym katalogu: 100% IDEMPOTENTNOŚĆ (zero zapisanych/usuniętych plików)
+    res2 = reconcile_data_directory(test_data)
+    assert not res2.has_errors
+    assert res2.written_files == []
+    assert res2.deleted_raw_files == []
+    assert res2.deleted_empty_folders == []
+
+
+def test_depth_limit_exceeded_ignored_with_warning(tmp_path: Path) -> None:
+    # Tworzymy 5 poziomów zagnieżdżenia: L1 / L2 / L3 / L4 / L5
+    deep_dir = tmp_path / "L1" / "L2" / "L3" / "L4" / "L5"
+    deep_dir.mkdir(parents=True)
+    raw_dash = deep_dir / "too-deep.json"
+    raw_dash.write_text(
+        json.dumps({"title": "Too Deep Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+
+    res = reconcile_data_directory(tmp_path)
+    assert not res.has_errors
+    assert len(res.issues) == 1
+    assert res.issues[0].severity == IssueSeverity.WARNING
+    assert "depth 5" in res.issues[0].message
+    # Plik na 5 poziomie nie został ruszony i nie utworzono folder.yaml
+    assert raw_dash.exists()
+    assert not (deep_dir / "folder.yaml").exists()
+
+
+def test_update_existing_canonical_dashboard_from_new_raw_export(tmp_path: Path) -> None:
+    folder = tmp_path / "PRD - Applications"
+    folder.mkdir()
+
+    # Najpierw tworzymy pierwszy eksport
+    raw1 = folder / "export-1.json"
+    raw1.write_text(
+        json.dumps({"title": "My App", "schemaVersion": 39, "panels": [{"id": 1}]}),
+        encoding="utf-8",
+    )
+    reconcile_data_directory(tmp_path)
+    assert (folder / "d-my-app.yaml").exists()
+
+    # Teraz user wrzuca nowy surowy eksport z tym samym tytułem ("My App"), ale nowym panelem
+    raw2 = folder / "My App-999999.json"
+    raw2.write_text(
+        json.dumps({"title": "My App", "schemaVersion": 39, "panels": [{"id": 1}, {"id": 2}]}),
+        encoding="utf-8",
+    )
+    res_update = reconcile_data_directory(tmp_path)
+    assert not res_update.has_errors
+    assert not raw2.exists()
+    updated = yaml.safe_load((folder / "d-my-app.yaml").read_text(encoding="utf-8"))
+    assert len(updated["spec"]["panels"]) == 2
+
+
+def test_collision_two_raw_exports_with_same_title_fails(tmp_path: Path) -> None:
+    folder = tmp_path / "PRD - Applications"
+    folder.mkdir()
+
+    for idx in (1, 2):
+        (folder / f"export-{idx}.json").write_text(
+            json.dumps({"title": "Duplicate Title", "schemaVersion": 39, "panels": []}),
+            encoding="utf-8",
+        )
+
+    res = reconcile_data_directory(tmp_path)
+    assert res.has_errors
+    assert any("Name collision" in issue.message for issue in res.issues)
+
+
+def test_empty_folder_manifest_is_cleaned_up(tmp_path: Path) -> None:
+    folder = tmp_path / "PRD - Applications" / "Subfolder"
+    folder.mkdir(parents=True)
+    raw = folder / "dash.json"
+    raw.write_text(
+        json.dumps({"title": "Temp Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+
+    reconcile_data_directory(tmp_path)
+    assert (folder / "folder.yaml").exists()
+    assert (folder.parent / "folder.yaml").exists()
+
+    # Teraz user usuwa dashboard
+    (folder / "d-temp-dash.yaml").unlink()
+
+    res_cleanup = reconcile_data_directory(tmp_path)
+    assert not (folder / "folder.yaml").exists()
+    assert not (folder.parent / "folder.yaml").exists()
+    assert len(res_cleanup.deleted_empty_folders) == 2
+
+
+def test_external_sharing_export_with_inputs_rejected(tmp_path: Path) -> None:
+    """Sprawdza odrzucenie eksportu z zaznaczoną opcją 'Export for sharing externally' (__inputs)."""
+    folder = tmp_path / "PRD - Applications"
+    folder.mkdir()
+    raw = folder / "external.json"
+    raw.write_text(
+        json.dumps(
+            {
+                "__inputs": [{"name": "DS_PROM", "type": "datasource"}],
+                "title": "External Dash",
+                "schemaVersion": 39,
+                "panels": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    res = reconcile_data_directory(tmp_path)
+    assert res.has_errors
+    assert any("Export for sharing externally" in issue.message for issue in res.issues)
+
+
+def test_resource_directly_in_data_root_warns(tmp_path: Path) -> None:
+    """Sprawdza ostrzeżenie, gdy użytkownik wrzuci dashboard bezpośrednio do głównego folderu data/."""
+    raw = tmp_path / "loose-dash.json"
+    raw.write_text(
+        json.dumps({"title": "Loose Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+
+    res = reconcile_data_directory(tmp_path)
+    assert not res.has_errors
+    assert any("outside any Grafana folder" in issue.message for issue in res.issues)
+

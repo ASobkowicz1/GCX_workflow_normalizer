@@ -1,0 +1,9 @@
+apiVersion: folder.grafana.app/v1beta1
+kind: Folder
+metadata:
+  name: f-d8f2bfb1ae11685dc4a7
+  annotations:
+    grafana.app/folder: f-2a177fb579c9f7bf55bf
+spec:
+  title: folder 1
+  description: ''
