@@ -62,7 +62,7 @@ jobs:
             MODE="plan"
           else
             # Branch nie zaczyna się od prd / dev / tech (np. main) -> kończymy workflow bez dalszych kroków
-            echo "⏭️ Branch '${BRANCH_NAME}' nie zaczyna się od prd, dev ani tech – kończę workflow."
+            echo "⏭️ Branch '${BRANCH_NAME}' doesn't start with prd, dev or tech - END."
             echo "MODE=skip" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -71,7 +71,7 @@ jobs:
           echo "CHECKOUT_REF=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
           echo "BASE_REF=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "MODE=${MODE}" >> "$GITHUB_OUTPUT"
-          echo "🎯 Wykryty tryb: ${MODE} | Środowisko (stack): ${TARGET_ENV} | Base ref: ${BASE_REF}"
+          echo "🎯 Detected mode: ${MODE} | Stack (env): ${TARGET_ENV} | Base ref: ${BASE_REF}"
 
       # KROK 2: Pobranie repozytorium z pełną historią (fetch-depth: 0 potrzebne dla git diff i git show)
       - name: Checkout repository
@@ -173,7 +173,7 @@ jobs:
             git commit -m "chore(normalizer): normalize Grafana resources for ${{ steps.env_ctx.outputs.TARGET_ENV }}"
             git push origin HEAD:${{ github.head_ref }}
           else
-            echo "Brak nowych surowych plików do zacommitowania – manifesty są już kanoniczne."
+            echo "No new raw files to commit - the manifests are already canonical."
           fi
 
       # KROK 6C: Publikacja komentarza z planem zmian (TF-style) w Pull Requeście
