@@ -159,13 +159,13 @@ jobs:
           mkdir -p ~/.config/gcx
           cat <<EOF > ~/.config/gcx/config.yaml
           version: 1
-          current-context: ${TARGET_ENV}
+          current-context: default
           contexts:
-            ${TARGET_ENV}:
-              stack: ${TARGET_ENV}
+            default:
+              stack: default
           stacks:
-            ${TARGET_ENV}:
-              slug: ${TARGET_ENV}
+            default:
+              slug: default
               grafana:
                 server: ${GRAFANA_URL}
                 token: "${GRAFANA_TOKEN}"
@@ -173,7 +173,7 @@ jobs:
                 stack-id: ${GRAFANA_STACK_ID}
           EOF
 
-          gcx config check --context "${TARGET_ENV}"
+          gcx config check
 
       # KROK 6A: Tryb PLAN (dla brancha użytkownika oraz Pull Requesta)
       - name: Normalize files and Plan deploy (dry-run)
@@ -187,7 +187,6 @@ jobs:
             --data-dir grafana \
             --base-ref "${BASE_REF}" \
             --gcx-bin gcx \
-            --context "${TARGET_ENV}" \
             --summary-file plan.md
 
       # KROK 6B: Bot Commit na gałęzi Pull Requesta (tylko w PR, gdy normalizer przekształcił surowe pliki)
@@ -268,5 +267,4 @@ jobs:
             --base-ref "${BASE_REF}" \
             --target-ref "${{ github.sha }}" \
             --gcx-bin gcx \
-            --context "${TARGET_ENV}" \
             ${EXTRA_ARGS}

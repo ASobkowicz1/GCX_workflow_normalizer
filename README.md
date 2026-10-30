@@ -65,33 +65,17 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
 
 ### 2. Tryb Plan (normalizacja + walidacja + podsumowanie zmian)
 ```bash
-python3 -m normalizer plan \
-  --repo-root . \
-  --data-dir grafana \
-  --base-ref origin/prd \
-  --gcx-bin gcx \
-  --context prd
+python3 -m normalizer plan --repo-root . --data-dir grafana --base-ref origin/prd --gcx-bin gcx
 ```
 
 ### 3. Tryb Deploy (wdrożenie delty po scaleniu)
 ```bash
-python3 -m normalizer deploy \
-  --repo-root . \
-  --data-dir grafana \
-  --base-ref HEAD~1 \
-  --target-ref HEAD \
-  --gcx-bin gcx \
-  --context prd
+python3 -m normalizer deploy --repo-root . --data-dir grafana --base-ref HEAD~1 --target-ref HEAD --gcx-bin gcx
 ```
 
 ### 4. Wymuszenie pełnej synchronizacji (`--full-sync`)
 ```bash
-python3 -m normalizer deploy \
-  --repo-root . \
-  --data-dir grafana \
-  --full-sync \
-  --gcx-bin gcx \
-  --context prd
+python3 -m normalizer deploy --repo-root . --data-dir grafana --full-sync --gcx-bin gcx
 ```
 
 ---
