@@ -96,7 +96,13 @@ jobs:
           fi
           gcx --version
 
-      # KROK 4A: Assume Role w AWS przez OIDC (można użyć jednej roli lub roli zależnej od TARGET_ENV)
+      # KROK 4: Instalacja zależności Pythona (tylko PyYAML)
+      - name: Setup Python
+        if: steps.env_ctx.outputs.MODE != 'skip'
+        run: |
+          python3 -m pip install --quiet pyyaml
+
+      # KROK 5A: Assume Role w AWS przez OIDC (można użyć jednej roli lub roli zależnej od TARGET_ENV)
       - name: Configure AWS credentials
         if: steps.env_ctx.outputs.MODE != 'skip'
         uses: aws-actions/configure-aws-credentials@v4
@@ -104,7 +110,7 @@ jobs:
           role-to-assume: arn:aws:iam::123456789012:role/github-actions-grafana-${{ steps.env_ctx.outputs.TARGET_ENV }}
           aws-region: eu-central-1
 
-      # KROK 4B: Pobranie pojedynczego JSON-a konfiguracyjnego dla danego stacka (prd / dev / tech) z AWS SSM
+      # KROK 5B: Pobranie pojedynczego JSON-a konfiguracyjnego dla danego stacka (prd / dev / tech) z AWS SSM
       - name: Configure Grafana credentials
         if: steps.env_ctx.outputs.MODE != 'skip'
         env:
@@ -141,14 +147,8 @@ jobs:
 
           gcx config check --context "${TARGET_ENV}"
 
-      # KROK 5: Instalacja zależności Pythona (tylko PyYAML)
-      - name: Setup Python
-        if: steps.env_ctx.outputs.MODE != 'skip'
-        run: |
-          python3 -m pip install --quiet pyyaml
-
       # KROK 6A: Tryb PLAN (dla brancha użytkownika oraz Pull Requesta)
-      - name: Run Normalizer & Plan (dry-run)
+      - name: Normalize files and Plan deploy (dry-run)
         if: steps.env_ctx.outputs.MODE == 'plan'
         env:
           TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
