@@ -82,7 +82,7 @@ jobs:
           fetch-depth: 0
 
       # KROK 3: Rozpakowanie tymczasowej binarki GCX (dopóki nie pojawi się w obrazie runnera)
-      - name: Setup GCX binary
+      - name: Setup GCX
         if: steps.env_ctx.outputs.MODE != 'skip'
         run: |
           if ! command -v gcx &> /dev/null; then
