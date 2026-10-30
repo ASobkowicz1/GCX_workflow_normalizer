@@ -177,7 +177,7 @@ jobs:
           fi
 
       # KROK 6C: Publikacja komentarza z planem zmian (TF-style) w Pull Requeście
-      - name: Post Plan Summary comment on PR
+      - name: Post Plan summary comment on PR
         if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v7
         with:
