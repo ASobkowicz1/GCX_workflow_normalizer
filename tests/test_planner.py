@@ -91,20 +91,10 @@ def test_full_git_lifecycle_create_update_destroy(tmp_path: Path) -> None:
     summary_apply = format_terraform_summary(plan, is_apply=True)
     assert "Apply: 1 added, 1 changed, 1 destroyed." in summary_apply
 
-    # Sprawdźmy wygenerowane komendy GCX w trybie dry_run (validate + delete --dry-run) oraz deploy (validate + push + delete)
+    # Sprawdźmy wygenerowane komendy GCX w trybie dry_run (validate dla push_items) oraz deploy (validate + push + delete)
     cmds_dry = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=True, context="prd")
-    assert len(cmds_dry) == 2
+    assert len(cmds_dry) == 1
     assert cmds_dry[0][:4] == ["./gcx", "resources", "validate", "--context"]
-    assert cmds_dry[1] == [
-        "./gcx",
-        "resources",
-        "delete",
-        f"dashboards/{plan.to_destroy[0].name}",
-        "--context",
-        "prd",
-        "--dry-run",
-        "-y",
-    ]
 
     # Sprawdźmy wygenerowane komendy GCX w trybie deploy (1: pre-flight validate, 2: push, 3: delete)
     cmds = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=False, context="prd")
@@ -181,4 +171,34 @@ def test_zero_commit_sha_from_github_actions_new_branch(tmp_path: Path) -> None:
     assert len(plan.to_add) == 2  # Folder PRD + Dashboard First Dash
     assert len(plan.to_change) == 0
     assert len(plan.to_destroy) == 0
+
+
+def test_full_sync_pushes_all_files(tmp_path: Path) -> None:
+    """Sprawdza, czy flaga full_sync=True traktuje wszystkie pliki z repo jako Create (bez kasowania czegokolwiek)."""
+    repo = tmp_path / "repo"
+    data_dir = repo / "data" / "PRD"
+    data_dir.mkdir(parents=True)
+
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+
+    (data_dir / "dash.json").write_text(
+        json.dumps({"title": "Sync Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+    reconcile_data_directory(repo / "data")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Committed dash")
+
+    # Gdy stan na dysku odpowiada HEAD, zwykły diff zwraca pusty plan:
+    plan_normal = build_delta_plan(repo, data_subdir="data", base_ref="HEAD")
+    assert len(plan_normal.items) == 0
+
+    # Z flagą full_sync plan obejmuje wszystkie zasoby niezależnie od braku zmian:
+    plan_sync = build_delta_plan(repo, data_subdir="data", base_ref="HEAD", full_sync=True)
+    assert len(plan_sync.to_add) == 2  # Folder PRD + Dashboard Sync Dash
+    assert len(plan_sync.to_change) == 0
+    assert len(plan_sync.to_destroy) == 0
+
 

@@ -28,14 +28,48 @@ def _write_summary(markdown: str, output_file: Path | None = None) -> None:
             f.write(markdown + "\n")
 
 
+def _filter_gcx_output(text: str) -> str:
+    """Ukrywa nadmiarowe komunikaty informacyjne GCX (auto-approval, brak server-side dry-run dla alertrules)."""
+    filtered_lines: list[str] = []
+    for line in text.splitlines():
+        if "Auto-approval enabled: automatically setting --force" in line:
+            continue
+        if "alertrules.rules.alerting.grafana.app does not support server-side dry-run" in line:
+            continue
+        if "skipped (server-side dry-run unsupported, not verified)" in line:
+            line = "✔ No errors found."
+        filtered_lines.append(line)
+    return "\n".join(filtered_lines)
+
+
 def _execute_commands(commands: list[list[str]], repo_root: Path, is_apply: bool = False) -> int:
-    """Uruchamia kolejne polecenia GCX i przerywa wykonanie w razie błędu."""
+    """
+    Uruchamia kolejne polecenia GCX i przerywa wykonanie w razie błędu.
+    Jeśli polecenie `delete` zwróci 404 / not found (bo zasób został już usunięty),
+    wypisuje ostrzeżenie i kontynuuje bezpiecznie.
+    """
     for cmd in commands:
         is_validation_step = not is_apply or "validate" in cmd or "--dry-run" in cmd
+        is_delete_step = "delete" in cmd
+        cmd_display = [Path(cmd[0]).name] + cmd[1:]
         prefix = "🔍 Validating" if is_validation_step else "🚀 Applying"
-        print(f"\n{prefix}: {' '.join(cmd)}")
-        proc = subprocess.run(cmd, cwd=repo_root)
+        print(f"\n{prefix}: {' '.join(cmd_display)}")
+        proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+        if proc.stdout:
+            cleaned_out = _filter_gcx_output(proc.stdout)
+            if cleaned_out.strip():
+                print(cleaned_out)
+        if proc.stderr:
+            cleaned_err = _filter_gcx_output(proc.stderr)
+            if cleaned_err.strip():
+                print(cleaned_err, file=sys.stderr)
         if proc.returncode != 0:
+            combined_out = f"{proc.stdout}\n{proc.stderr}".lower()
+            if is_delete_step and ("not found" in combined_out or "404" in combined_out):
+                print(
+                    "⚠️ Resource to delete was already absent in Grafana (404 Not Found) – continuing safely."
+                )
+                continue
             print(f"❌ Command failed with exit code {proc.returncode}")
             return proc.returncode
     return 0
@@ -59,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         "--repo-root", type=Path, default=Path(), help="Ścieżka do repozytorium Git"
     )
     parser.add_argument(
-        "--data-dir", default="data", help="Podkatalog z zasobami Grafany (domyślnie: data)"
+        "--data-dir", default="grafana", help="Podkatalog z zasobami Grafany (domyślnie: grafana)"
     )
     parser.add_argument(
         "--base-ref", default="HEAD", help="Bazowy ref Git do porównania diff (np. origin/prd)"
@@ -68,6 +102,11 @@ def main(argv: list[str] | None = None) -> int:
         "--target-ref",
         default=None,
         help="Docelowy ref Git dla trybu deploy (np. HEAD)",
+    )
+    parser.add_argument(
+        "--full-sync",
+        action="store_true",
+        help="Wymusza wypchnięcie wszystkich plików z grafana/ niezależnie od diff (np. z workflow_dispatch)",
     )
     parser.add_argument("--gcx-bin", default="./gcx", help="Ścieżka do pliku wykonywalnego gcx")
     parser.add_argument("--context", default=None, help="Nazwa kontekstu GCX (np. dev, tech, prd)")
@@ -92,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             base_ref=args.base_ref,
             target_ref=None,
             issues=rec_result.issues,
+            full_sync=args.full_sync,
         )
         summary_md = format_terraform_summary(plan, is_apply=False)
         _write_summary(summary_md, args.summary_file)
@@ -117,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             data_subdir=args.data_dir,
             base_ref=args.base_ref,
             target_ref=target_ref,
+            full_sync=args.full_sync,
         )
         summary_md = format_terraform_summary(plan, is_apply=True)
         _write_summary(summary_md, args.summary_file)

@@ -40,45 +40,26 @@ def _resolve_effective_base_ref(
     repo_root: Path,
     base_ref: str,
     target_ref: str | None,
-    data_subdir: str,
 ) -> str:
     """
-    Wyznacza właściwy commit bazowy do porównania:
-    1. Jeśli `base_ref` to 40 zer (`github.event.before` przy utworzeniu nowego brancha w GitHub Actions),
-       zwraca `GIT_EMPTY_TREE_HASH`, dzięki czemu wszystkie pliki są widoczne jako nowo dodane (Added).
-    2. W trybie `plan` (gdy target_ref is None), jeśli podano branch bazowy (np. origin/prd),
-       używa `git merge-base <base_ref> HEAD`, aby uwzględnić wszystkie commity na branchu użytkownika.
-    3. Jeśli `base_ref == "HEAD"` i wszystkie zmiany są już zacommitowane w HEAD (brak zmian w working tree),
-       cofa punkt odniesienia do `HEAD~1` (lub `GIT_EMPTY_TREE_HASH` dla pierwszego commita w repo).
+    Wyznacza punkt odniesienia do porównania w Git:
+    1. Jeśli `base_ref` to 40 zer (nowy branch w GitHub Actions), zwraca `GIT_EMPTY_TREE_HASH`.
+    2. W trybie deploy (gdy target_ref jest podany) lub gdy base_ref to HEAD, zwraca bezpośrednio base_ref.
+    3. W trybie plan gdy podano branch bazowy (np. origin/prd), wyznacza wspólnego przodka (merge-base).
     """
     if base_ref == ZERO_COMMIT_SHA:
         return GIT_EMPTY_TREE_HASH
 
-    if target_ref is not None:
+    if target_ref is not None or base_ref == "HEAD":
         return base_ref
 
-    if base_ref != "HEAD":
-        try:
-            merge_base = _run_git(repo_root, ["merge-base", base_ref, "HEAD"]).strip()
-            if merge_base:
-                return merge_base
-        except subprocess.CalledProcessError:
-            return base_ref
-        return base_ref
+    try:
+        merge_base = _run_git(repo_root, ["merge-base", base_ref, "HEAD"]).strip()
+        if merge_base:
+            return merge_base
+    except subprocess.CalledProcessError:
+        pass
 
-    # Gdy base_ref == "HEAD", sprawdzamy czy na dysku (working tree + untracked) są jakiekolwiek niezacommitowane zmiany
-    wt_diff = _run_git(repo_root, ["diff", "--name-only", "HEAD", "--", data_subdir]).strip()
-    untracked = _run_git(
-        repo_root, ["ls-files", "--others", "--exclude-standard", "--", data_subdir]
-    ).strip()
-    if not wt_diff and not untracked:
-        # Brak zmian niezacommitowanych -> sprawdźmy czy istnieje HEAD~1 (albo użyjmy pustego drzewa dla 1. commita)
-        try:
-            prev_commit = _run_git(repo_root, ["rev-parse", "--verify", "HEAD~1"]).strip()
-            if prev_commit:
-                return "HEAD~1"
-        except subprocess.CalledProcessError:
-            return GIT_EMPTY_TREE_HASH
     return base_ref
 
 
@@ -98,9 +79,12 @@ def build_delta_plan(
     base_ref: str = "HEAD",
     target_ref: str | None = None,
     issues: list[ValidationIssue] | None = None,
+    full_sync: bool = False,
 ) -> ExecutionPlan:
     """
     Buduje plan zmian (Create / Update / Destroy) na podstawie `git diff`:
+    - Gdy `full_sync=True`: porównuje stan z pustym drzewem Git (`GIT_EMPTY_TREE_HASH`),
+      co powoduje wypchnięcie wszystkich zasobów z repozytorium (np. z workflow_dispatch).
     - Gdy `target_ref` jest None: porównuje `base_ref` z plikami na dysku (working tree + untracked).
     - Gdy `target_ref` jest podany (np. po merge'u): porównuje dwa commity `base_ref..target_ref`.
     """
@@ -108,7 +92,11 @@ def build_delta_plan(
     data_root = (repo_root / data_subdir).resolve()
     plan = ExecutionPlan(issues=list(issues) if issues else [])
 
-    effective_base = _resolve_effective_base_ref(repo_root, base_ref, target_ref, data_subdir)
+    effective_base = (
+        GIT_EMPTY_TREE_HASH
+        if full_sync
+        else _resolve_effective_base_ref(repo_root, base_ref, target_ref)
+    )
 
     # 1. Pobranie zmian śledzonych przez Git względem effective_base
     diff_args = ["diff", "--name-status", "--no-renames", effective_base]
@@ -255,7 +243,7 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
     lines: list[str] = ["## Deploy grafana-observability (TF-style)", ""]
 
     if plan.issues:
-        lines.append("## ⚠️ Validation Issues ⚠️")
+        lines.append("## Validation Issues ⚠️")
         for issue in plan.issues:
             icon = "❌" if issue.severity == "ERROR" else "⚠️"
             lines.append(f"{icon} {issue.severity} - `{issue.path.name}`: {issue.message}")
@@ -329,15 +317,11 @@ def build_gcx_delta_commands(
     }
 
     if dry_run:
-        # W trybie planu: walidacja serwerowa (dry-run) dla dodawanych/zmienianych oraz dry-run dla usuwanych
+        # W trybie planu: walidacja serwerowa (dry-run) dla dodawanych/zmienianych zasobów
         if push_items:
             cmd = [gcx_bin, "resources", "validate", *ctx_flags]
             for item in push_items:
                 cmd.extend(["-p", str(item.repo_path)])
-            commands.append(cmd)
-        if destroy_items:
-            selectors = [f"{kind_to_plural[i.kind]}/{i.name}" for i in destroy_items]
-            cmd = [gcx_bin, "resources", "delete", *selectors, *ctx_flags, "--dry-run", "-y"]
             commands.append(cmd)
         return commands
 

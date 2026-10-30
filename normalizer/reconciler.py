@@ -201,7 +201,7 @@ def reconcile_data_directory(
                             severity=IssueSeverity.WARNING,
                             message=(
                                 f"Folder '{canonical_path}' is at depth {depth} "
-                                f"(max allowed by Grafana is {max_depth}). File is ignored."
+                                f"(max allowed is {max_depth}). File is ignored."
                             ),
                         )
                     )
