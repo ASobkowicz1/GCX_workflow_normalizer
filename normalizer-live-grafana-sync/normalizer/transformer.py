@@ -68,8 +68,11 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
     if not parsed.data:
         raise ValueError("input data cannot be empty")
     raw = copy.deepcopy(parsed.data)
+    target_api_version = "rules.alerting.grafana.app/v0alpha1"
     if "spec" in raw and raw.get("kind") == "AlertRule":
         spec: dict[str, Any] = raw["spec"]
+        if str(raw.get("apiVersion", "")).startswith("rules.alerting.grafana.app/"):
+            target_api_version = raw["apiVersion"]
     elif "groups" in raw and raw.get("apiVersion") == 1:
         group = raw["groups"][0]
         rule = group["rules"][0]
@@ -123,7 +126,7 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
         raise ValueError("unsupported alert rule format")
 
     return {
-        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "apiVersion": target_api_version,
         "kind": "AlertRule",
         "metadata": {
             "name": alert_uid,

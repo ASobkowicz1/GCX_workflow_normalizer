@@ -1,7 +1,7 @@
 name: Grafana Observability as Code (GCX)
 
 on:
-  # 1. Ręczne wywołanie na żądanie (np. do wymuszenia pełnego syncu po onboardingu nowego stacka)
+  # 1. Ręczne wywołanie na żądanie (np. do wymuszenia pełnego wypchnięcia zasobów po onboardingu nowego stacka)
   workflow_dispatch:
     inputs:
       environment:
@@ -12,8 +12,8 @@ on:
           - dev
           - tech
           - prd
-      full_sync:
-        description: "Force full sync: push all files (disregard git diff)"
+      full_push:
+        description: "Force full push: push all files (disregard git diff)"
         required: false
         type: boolean
         default: false
@@ -65,28 +65,28 @@ jobs:
             CHECKOUT_REF="${{ github.ref_name }}"
             BASE_REF="HEAD~1"
             MODE="deploy"
-            FULL_SYNC="${{ inputs.full_sync }}"
+            FULL_PUSH="${{ inputs.full_push }}"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             # W Pull Requeście środowiskiem docelowym jest branch, DO którego robimy merge (np. prd, dev, tech)
             TARGET_ENV="${{ github.base_ref }}"
             CHECKOUT_REF="${{ github.head_ref }}"
             BASE_REF="origin/${{ github.base_ref }}"
             MODE="plan"
-            FULL_SYNC="false"
+            FULL_PUSH="false"
           elif [[ "${BRANCH_NAME}" =~ ^(prd|dev|tech)$ ]]; then
             # Push po Merge bezpośrednio na jeden z 3 branchy środowiskowych -> tryb DEPLOY
             TARGET_ENV="${BRANCH_NAME}"
             CHECKOUT_REF="${BRANCH_NAME}"
             BASE_REF="${{ github.event.before }}"
             MODE="deploy"
-            FULL_SYNC="false"
+            FULL_PUSH="false"
           elif [[ "${BRANCH_NAME}" =~ ^(prd|dev|tech)([/_-].*)?$ ]]; then
             # Push na roboczy branch użytkownika zaczynający się od prd, dev lub tech (np. dev/nowy-alert, prd-fix) -> tryb PLAN
             TARGET_ENV="${BASH_REMATCH[1]}"
             CHECKOUT_REF="${BRANCH_NAME}"
             BASE_REF="origin/${TARGET_ENV}"
             MODE="plan"
-            FULL_SYNC="false"
+            FULL_PUSH="false"
           else
             # Branch nie zaczyna się od prd / dev / tech (np. main) -> kończymy workflow bez dalszych kroków
             echo "⏭️ Branch '${BRANCH_NAME}' doesn't start with prd, dev or tech - END."
@@ -98,8 +98,8 @@ jobs:
           echo "CHECKOUT_REF=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
           echo "BASE_REF=${BASE_REF}" >> "$GITHUB_OUTPUT"
           echo "MODE=${MODE}" >> "$GITHUB_OUTPUT"
-          echo "FULL_SYNC=${FULL_SYNC}" >> "$GITHUB_OUTPUT"
-          echo "🎯 Detected mode: ${MODE} | Stack (env): ${TARGET_ENV} | Base ref: ${BASE_REF} | Full sync: ${FULL_SYNC}"
+          echo "FULL_PUSH=${FULL_PUSH}" >> "$GITHUB_OUTPUT"
+          echo "🎯 Detected mode: ${MODE} | Stack (env): ${TARGET_ENV} | Base ref: ${BASE_REF} | Full push: ${FULL_PUSH}"
 
       # KROK 2: Pobranie repozytorium z pełną historią (fetch-depth: 0 potrzebne dla git diff i git show)
       - name: Checkout repository
@@ -179,7 +179,6 @@ jobs:
       - name: Normalize files and Plan deploy (dry-run)
         if: steps.env_ctx.outputs.MODE == 'plan'
         env:
-          TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
           BASE_REF: ${{ steps.env_ctx.outputs.BASE_REF }}
         run: |
           python3 -m normalizer plan \
@@ -251,14 +250,13 @@ jobs:
       - name: Deploy to Grafana Cloud
         if: steps.env_ctx.outputs.MODE == 'deploy'
         env:
-          TARGET_ENV: ${{ steps.env_ctx.outputs.TARGET_ENV }}
           BASE_REF: ${{ steps.env_ctx.outputs.BASE_REF }}
-          FULL_SYNC: ${{ steps.env_ctx.outputs.FULL_SYNC }}
+          FULL_PUSH: ${{ steps.env_ctx.outputs.FULL_PUSH }}
         run: |
           EXTRA_ARGS=""
-          if [ "${FULL_SYNC}" = "true" ]; then
-            EXTRA_ARGS="--full-sync"
-            echo "⚡ Full sync mode enabled - pushing all resources from repository."
+          if [ "${FULL_PUSH}" = "true" ]; then
+            EXTRA_ARGS="--full-push"
+            echo "⚡ Full push mode enabled - pushing all resources from repository."
           fi
 
           python3 -m normalizer deploy \

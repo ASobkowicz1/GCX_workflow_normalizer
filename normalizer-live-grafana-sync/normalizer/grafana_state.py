@@ -201,7 +201,7 @@ def fetch_live_managed_resources(
             proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         except FileNotFoundError as exc:
             raise RuntimeError(
-                f"Nie znaleziono binarki gcx: '{gcx_bin}'. Podaj ją jawnie przez --gcx-bin (np. --gcx-bin gcx)."
+                f"gcx binary not found: '{gcx_bin}'. Please specify it explicitly via --gcx-bin (e.g. --gcx-bin gcx)."
             ) from exc
         combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
         if proc.returncode != 0 and any(
@@ -209,7 +209,7 @@ def fetch_live_managed_resources(
             for err in ("unauthorized", "401", "invalid configuration", "connection refused")
         ):
             raise RuntimeError(
-                f"Błąd połączenia lub autoryzacji GCX podczas pobierania stanu Grafany:\n{proc.stderr or proc.stdout}"
+                f"GCX connection or authorization error while fetching Grafana state:\n{proc.stderr or proc.stdout}"
             )
 
         for json_file in Path(tmp_dir).rglob("*.json"):

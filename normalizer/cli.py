@@ -85,36 +85,36 @@ def main(argv: list[str] | None = None) -> int:
         "mode",
         choices=["plan", "deploy"],
         help=(
-            "plan: normalizacja plików w data/, walidacja reguł oraz wygenerowanie planu zmian (gcx validate); "
-            "deploy: wdrożenie delty zmian po merge na gotowych plikach (gcx push / delete)"
+            "plan: normalize files in data/, validate rules and generate diff plan (gcx validate); "
+            "deploy: deploy delta changes after merge using normalized files (gcx push / delete)"
         ),
     )
     parser.add_argument(
-        "--repo-root", type=Path, default=Path(), help="Ścieżka do repozytorium Git"
+        "--repo-root", type=Path, default=Path(), help="Path to Git repository root"
     )
     parser.add_argument(
-        "--data-dir", default="grafana", help="Podkatalog z zasobami Grafany (domyślnie: grafana)"
+        "--data-dir", default="grafana", help="Subdirectory with Grafana resources (default: grafana)"
     )
     parser.add_argument(
-        "--base-ref", default="HEAD", help="Bazowy ref Git do porównania diff (np. origin/prd)"
+        "--base-ref", default="HEAD", help="Base Git ref for diff comparison (e.g. origin/prd)"
     )
     parser.add_argument(
         "--target-ref",
         default=None,
-        help="Docelowy ref Git dla trybu deploy (np. HEAD)",
+        help="Target Git ref for deploy mode (e.g. HEAD)",
     )
     parser.add_argument(
-        "--full-sync",
+        "--full-push",
         action="store_true",
-        help="Wymusza wypchnięcie wszystkich plików z grafana/ niezależnie od diff (np. z workflow_dispatch)",
+        help="Force push all files from data directory regardless of diff",
     )
-    parser.add_argument("--gcx-bin", default="./gcx", help="Ścieżka do pliku wykonywalnego gcx")
-    parser.add_argument("--context", default=None, help="Nazwa kontekstu GCX (np. dev, tech, prd)")
+    parser.add_argument("--gcx-bin", default="./gcx", help="Path to gcx binary")
+    parser.add_argument("--context", default=None, help="GCX context name (e.g. dev, tech, prd)")
     parser.add_argument(
-        "--skip-gcx", action="store_true", help="Tylko wygeneruj plan bez wywoływania gcx"
+        "--skip-gcx", action="store_true", help="Only generate execution plan without invoking gcx"
     )
     parser.add_argument(
-        "--summary-file", type=Path, default=None, help="Zapisz raport Markdown do pliku"
+        "--summary-file", type=Path, default=None, help="Save Markdown summary report to file"
     )
 
     args = parser.parse_args(argv)
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             base_ref=args.base_ref,
             target_ref=None,
             issues=rec_result.issues,
-            full_sync=args.full_sync,
+            full_push=args.full_push,
         )
         summary_md = format_terraform_summary(plan, is_apply=False)
         _write_summary(summary_md, args.summary_file)
@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             data_subdir=args.data_dir,
             base_ref=args.base_ref,
             target_ref=target_ref,
-            full_sync=args.full_sync,
+            full_push=args.full_push,
         )
         summary_md = format_terraform_summary(plan, is_apply=True)
         _write_summary(summary_md, args.summary_file)

@@ -12,16 +12,12 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
    - Oparty na precyzyjnym **Git Diff** (wdraża wyłącznie zasoby dotknięte w danym PR lub commicie).
    - **Minimalny blast radius:** zmiana jednego alertu dotyka tylko tego jednego alertu i trwa 2–3 sekundy.
    - **Odporność na błędy (404 Not Found ignore):** jeśli zasób został wcześniej usunięty lub nie istnieje, polecenie `delete` nie przerywa wdrożenia.
-   - **Bezpiecznik `--full-sync`:** możliwość jednorazowego wypchnięcia całego repozytorium (np. z poziomu zakładki *Actions* -> *Run workflow* dla nowego stacka).
+   - **Bezpiecznik `--full-push`:** możliwość jednorazowego wypchnięcia wszystkich zasobów z repozytorium (np. z poziomu zakładki *Actions* -> *Run workflow* dla nowego stacka lub Disaster Recovery). Nie kasuje zasobów w Grafanie – bezpieczny bootstrap.
 
 2. **Czyste i bezobsługowe flow dla programisty (PR & Squash Merge):**
    - Programista wrzuca surowy plik JSON lub YAML i tworzy PR. Nie instaluje lokalnie Pythona ani `gcx`.
    - GitHub Actions w **jednym przebiegu** porządkuje pliki, tworzy commit bota (`chore(normalizer): normalize ...`), nadaje mu status `success` przez GitHub API (brak blokady branch protection i brak drugiego przebiegu CI) oraz wkleja plan zmian do komentarza PR.
    - Scalenie do brancha docelowego (`prd`, `dev`, `tech`) odbywa się wyłącznie metodą **Squash and merge**, dzięki czemu do historii produkcyjnej trafia dokładnie jeden czysty commit.
-
-3. **Nocny Audytor Driftu (`wariant-3-grafana-state/`):**
-   - Wariant porównujący stan repozytorium 1:1 z żywym stanem w Grafana Cloud (`gcx resources pull`).
-   - Służy jako zadanie harmonogramowane (cron job w nocy lub audyt na żądanie) do raportowania, czy stan w chmurze nie rozjechał się z repozytorium Git.
 
 ---
 
@@ -30,7 +26,7 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
 ```text
 ├── .github/
 │   └── workflows/
-│       └── grafana-observability.yml   # Główny pipeline GitHub Actions (Plan, Bot-Commit, Deploy, Full-Sync)
+│       └── grafana-observability.yml   # Główny pipeline GitHub Actions (Plan, Bot-Commit, Deploy, Full-Push)
 ├── grafana/                            # Katalog z zasobami Grafany (L1 Foldery -> Podfoldery -> Zasoby)
 │   ├── PRD - Applications/
 │   │   ├── folder.yaml
@@ -42,16 +38,14 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
 │           ├── folder.yaml
 │           └── d-active-users.yaml
 ├── normalizer/                         # Główny pakiet produkcyjny GitOps
-│   ├── cli.py                          # Punkt wejścia (tryby: plan, deploy, flaga --full-sync)
+│   ├── cli.py                          # Punkt wejścia (tryby: plan, deploy, flaga --full-push)
 │   ├── planner.py                      # Budowanie delty Git, kolejkowanie komend GCX i raport Terraform-style
 │   ├── reconciler.py                   # Silnik normalizacji plików, deterministycznych UID i drzewa folderów
 │   ├── parser.py                       # Parsowanie manifestów Kubernetes oraz dashboardów JSON
 │   ├── paths.py                        # Walidacja ścieżek i głębokości folderów (maks. 4 poziomy)
 │   └── models.py                       # Dataklasy i typy
 ├── tests/                              # Zestaw testów jednostkowych (pytest)
-├── wariant-1-git-diff/                 # Archiwalna wersja referencyjna wariantu 1
-├── wariant-2-hybrid/                   # Wariant hybrydowy (Git Diff + sprawdzanie API)
-└── wariant-3-grafana-state/            # Wariant porównania 1:1 z żywą Grafaną (Nocny Audytor Driftu)
+└── normalizer-live-grafana-sync/       # Osobne narzędzie audytu/synchronizacji ze stanem żywym (własne README.md)
 ```
 
 ---
@@ -73,17 +67,32 @@ python3 -m normalizer plan --repo-root . --data-dir grafana --base-ref origin/pr
 python3 -m normalizer deploy --repo-root . --data-dir grafana --base-ref HEAD~1 --target-ref HEAD --gcx-bin gcx
 ```
 
-### 4. Wymuszenie pełnej synchronizacji (`--full-sync`)
+### 4. Wymuszenie pełnego wypchnięcia zasobów (`--full-push`)
+Wypycha 100% plików z repozytorium do Grafany (bez usuwania czegokolwiek). Przydatne przy onboardingu lub Disaster Recovery:
 ```bash
-python3 -m normalizer deploy --repo-root . --data-dir grafana --full-sync --gcx-bin gcx
+python3 -m normalizer deploy --repo-root . --data-dir grafana --full-push --gcx-bin gcx
+```
+
+### 5. Testowanie lokalne na katalogu przykładowym (`example_repo`)
+Możesz przetestować działanie planera na załączonych danych przykładowych:
+```bash
+python3 -m normalizer plan --repo-root . --data-dir example_repo/data --skip-gcx
+```
+
+### 6. Uruchomienie testów jednostkowych
+```bash
+pytest -v
 ```
 
 ---
 
 ## ⚙️ Konfiguracja GitHub Actions
 
-W ustawieniach repozytorium GitHub (**Settings $\rightarrow$ General $\rightarrow$ Pull Requests**):
-1. **Odznacz:** `Allow merge commits` oraz `Allow rebase merging`.
-2. **Zaznacz:** `Allow squash merging`.
-3. **Ustaw:** *Default commit message* $\rightarrow$ **Pull request title**.
-4. W sekcji **Branches**: ustaw dla `prd`, `dev`, `tech` regułę ochrony gałęzi wymagającą status checka `Observability deploy`.
+1. **W ustawieniach repozytorium GitHub (Settings $\rightarrow$ General $\rightarrow$ Pull Requests):**
+   - ❌ **Odznacz:** `Allow merge commits` oraz `Allow rebase merging`.
+   - ✅ **Zaznacz:** `Allow squash merging`.
+   - 🏷️ **Ustaw:** *Default commit message* $\rightarrow$ **Pull request title**.
+2. **Ochrona gałęzi (Settings $\rightarrow$ Branches):**
+   - Dla gałęzi `prd`, `dev`, `tech` włącz regułę ochrony wymagającą status checka `Observability deploy`.
+3. **Uprawnienia workflow (Settings $\rightarrow$ Actions $\rightarrow$ General):**
+   - W sekcji *Workflow permissions* upewnij się, że zaznaczona jest opcja **Read and write permissions** (wymagane dla bota i nadawania statusów przez API).

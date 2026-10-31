@@ -79,11 +79,11 @@ def build_delta_plan(
     base_ref: str = "HEAD",
     target_ref: str | None = None,
     issues: list[ValidationIssue] | None = None,
-    full_sync: bool = False,
+    full_push: bool = False,
 ) -> ExecutionPlan:
     """
     Buduje plan zmian (Create / Update / Destroy) na podstawie `git diff`:
-    - Gdy `full_sync=True`: porównuje stan z pustym drzewem Git (`GIT_EMPTY_TREE_HASH`),
+    - Gdy `full_push=True`: porównuje stan z pustym drzewem Git (`GIT_EMPTY_TREE_HASH`),
       co powoduje wypchnięcie wszystkich zasobów z repozytorium (np. z workflow_dispatch).
     - Gdy `target_ref` jest None: porównuje `base_ref` z plikami na dysku (working tree + untracked).
     - Gdy `target_ref` jest podany (np. po merge'u): porównuje dwa commity `base_ref..target_ref`.
@@ -94,7 +94,7 @@ def build_delta_plan(
 
     effective_base = (
         GIT_EMPTY_TREE_HASH
-        if full_sync
+        if full_push
         else _resolve_effective_base_ref(repo_root, base_ref, target_ref)
     )
 

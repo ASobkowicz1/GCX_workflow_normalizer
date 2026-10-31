@@ -103,3 +103,26 @@ def test_normalize_alertrule_from_example_repo() -> None:
     assert spec["expressions"]["A"]["relativeTimeRange"] == {"from": "600s", "to": "0s"}
     assert spec["expressions"]["C"]["source"] is True
     assert spec["notificationSettings"] == {"receiver": "empty"}
+
+
+def test_normalize_alertrule_preserves_v1beta1() -> None:
+    parsed = ParsedFile(
+        path=Path("alert.yaml"),
+        kind=FileKind.RAW_UI_ALERTRULE,
+        data={
+            "apiVersion": "rules.alerting.grafana.app/v1beta1",
+            "kind": "AlertRule",
+            "metadata": {"name": "raw-name", "uid": "123"},
+            "spec": {"title": "Beta Alert", "for": "5m"},
+        },
+    )
+    result = normalize_alertrule(
+        parsed,
+        folder_uid="f-11111111111111111111",
+        alert_uid="a-22222222222222222222",
+    )
+    assert result["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
+    assert result["metadata"]["name"] == "a-22222222222222222222"
+    assert result["metadata"]["annotations"] == {"grafana.app/folder": "f-11111111111111111111"}
+    assert result["spec"]["title"] == "Beta Alert"
+

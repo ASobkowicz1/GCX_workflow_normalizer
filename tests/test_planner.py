@@ -173,8 +173,8 @@ def test_zero_commit_sha_from_github_actions_new_branch(tmp_path: Path) -> None:
     assert len(plan.to_destroy) == 0
 
 
-def test_full_sync_pushes_all_files(tmp_path: Path) -> None:
-    """Sprawdza, czy flaga full_sync=True traktuje wszystkie pliki z repo jako Create (bez kasowania czegokolwiek)."""
+def test_full_push_pushes_all_files(tmp_path: Path) -> None:
+    """Sprawdza, czy flaga full_push=True traktuje wszystkie pliki z repo jako Create (bez kasowania czegokolwiek)."""
     repo = tmp_path / "repo"
     data_dir = repo / "data" / "PRD"
     data_dir.mkdir(parents=True)
@@ -195,8 +195,8 @@ def test_full_sync_pushes_all_files(tmp_path: Path) -> None:
     plan_normal = build_delta_plan(repo, data_subdir="data", base_ref="HEAD")
     assert len(plan_normal.items) == 0
 
-    # Z flagą full_sync plan obejmuje wszystkie zasoby niezależnie od braku zmian:
-    plan_sync = build_delta_plan(repo, data_subdir="data", base_ref="HEAD", full_sync=True)
+    # Z flagą full_push plan obejmuje wszystkie zasoby niezależnie od braku zmian:
+    plan_sync = build_delta_plan(repo, data_subdir="data", base_ref="HEAD", full_push=True)
     assert len(plan_sync.to_add) == 2  # Folder PRD + Dashboard Sync Dash
     assert len(plan_sync.to_change) == 0
     assert len(plan_sync.to_destroy) == 0

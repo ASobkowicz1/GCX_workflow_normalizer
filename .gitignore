@@ -20,8 +20,7 @@ uv.lock
 .vscode/
 .python-version
 
-# Binarki GCX i pliki tymczasowe planu / 
-snapshotów
+# Binarki GCX i pliki tymczasowe planu / snapshotów
 gcx
 gcx.exe
 plan.md
