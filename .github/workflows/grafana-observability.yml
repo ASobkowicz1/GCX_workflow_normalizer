@@ -49,6 +49,7 @@ jobs:
   observability:
     name: Observability deploy
     runs-on: ubuntu-latest # Podmień na nazwę Waszego self-hosted runnera, np. [self-hosted, linux]
+    timeout-minutes: 10
     # Ochrona przed nieskończoną pętlą: nie uruchamiamy ponownie workflowu po commicie wykonanym przez bota
     if: github.actor != 'github-actions[bot]'
 

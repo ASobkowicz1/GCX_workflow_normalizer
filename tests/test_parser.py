@@ -30,7 +30,7 @@ def test_invalid_corrupted_json_or_non_dict(tmp_path: Path) -> None:
 
 
 def test_detect_raw_ui_dashboard_v2_from_example_repo() -> None:
-    path = Path("example_repo/data_dirty/PRD - Applications/Series active-1793109192093.json")
+    path = Path("example_repo/grafana_dirty/PRD - Applications/Series active-1793109192093.json")
     parsed = detect_and_parse(path)
 
     assert parsed.kind == FileKind.RAW_UI_DASHBOARD
@@ -85,7 +85,7 @@ def test_detect_canonical_folder(tmp_path: Path) -> None:
 
 def test_detect_raw_ui_alertrule_from_example_repo() -> None:
     path = Path(
-        "example_repo/data_dirty/PRD - Infrastructure/Usage/"
+        "example_repo/grafana_dirty/PRD - Infrastructure/Usage/"
         "modify-export-Usage alerts-cg2hxgz5619fkd-1793109505220.yaml"
     )
     parsed = detect_and_parse(path)

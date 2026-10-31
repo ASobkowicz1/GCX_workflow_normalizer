@@ -9,9 +9,9 @@ from normalizer.reconciler import reconcile_data_directory
 
 
 def test_reconcile_example_repo_copy(tmp_path: Path) -> None:
-    """Kopiuje brudne pliki z example_repo/data_dirty do tmp_path i sprawdza pełną normalizację + idempotentność."""
+    """Kopiuje brudne pliki z example_repo/grafana_dirty do tmp_path i sprawdza pełną normalizację + idempotentność."""
     test_data = tmp_path / "data"
-    shutil.copytree("example_repo/data_dirty", test_data)
+    shutil.copytree("example_repo/grafana_dirty", test_data)
 
     # 1. Pierwsze uruchomienie: normalizacja surowych plików
     res1 = reconcile_data_directory(test_data)
@@ -179,4 +179,3 @@ def test_resource_directly_in_data_root_warns(tmp_path: Path) -> None:
     res = reconcile_data_directory(tmp_path)
     assert not res.has_errors
     assert any("outside any Grafana folder" in issue.message for issue in res.issues)
-

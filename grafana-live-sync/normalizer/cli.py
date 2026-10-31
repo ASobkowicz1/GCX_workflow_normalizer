@@ -89,7 +89,6 @@ def main(argv: list[str] | None = None) -> int:
         "--data-dir", default="grafana", help="Subdirectory with Grafana resources (default: grafana)"
     )
     parser.add_argument("--gcx-bin", default="./gcx", help="Path to gcx binary")
-    parser.add_argument("--context", default=None, help="GCX context name (e.g. dev, tech, prd)")
     parser.add_argument(
         "--skip-gcx", action="store_true", help="Only generate execution plan without invoking gcx"
     )
@@ -104,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("## Fetching live resources state from Grafana...")
     try:
-        live_resources = fetch_live_managed_resources(gcx_bin=gcx_bin, context=args.context)
+        live_resources = fetch_live_managed_resources(gcx_bin=gcx_bin)
     except RuntimeError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
@@ -129,7 +128,6 @@ def main(argv: list[str] | None = None) -> int:
                 plan,
                 gcx_bin=gcx_bin,
                 dry_run=True,
-                context=args.context,
             )
             return _execute_commands(commands, repo_root, is_apply=False)
         return 0
@@ -153,7 +151,6 @@ def main(argv: list[str] | None = None) -> int:
                 plan,
                 gcx_bin=gcx_bin,
                 dry_run=False,
-                context=args.context,
             )
             return _execute_commands(commands, repo_root, is_apply=True)
         return 0

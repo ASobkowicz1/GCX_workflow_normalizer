@@ -246,10 +246,8 @@ def build_gcx_delta_commands(
     plan: ExecutionPlan,
     gcx_bin: str = "./gcx",
     dry_run: bool = False,
-    context: str | None = None,
 ) -> list[list[str]]:
     """Generuje bezpieczną listę komend dla GCX obejmującą wyłącznie zasoby różniące się od stanu Grafany."""
-    ctx_flags = ["--context", context] if context else []
     commands: list[list[str]] = []
 
     push_items = [
@@ -264,14 +262,14 @@ def build_gcx_delta_commands(
 
     if dry_run:
         if push_items:
-            cmd = [gcx_bin, "resources", "validate", *ctx_flags]
+            cmd = [gcx_bin, "resources", "validate"]
             for item in push_items:
                 cmd.extend(["-p", str(item.repo_path)])
             commands.append(cmd)
         return commands
 
     if push_items:
-        validate_cmd = [gcx_bin, "resources", "validate", *ctx_flags]
+        validate_cmd = [gcx_bin, "resources", "validate"]
         for item in push_items:
             validate_cmd.extend(["-p", str(item.repo_path)])
         commands.append(validate_cmd)
@@ -279,14 +277,14 @@ def build_gcx_delta_commands(
     folder_pushes = [i for i in push_items if i.kind == "Folder"]
     for depth in sorted({i.depth for i in folder_pushes}):
         level_folders = [i for i in folder_pushes if i.depth == depth]
-        cmd = [gcx_bin, "resources", "push", *ctx_flags]
+        cmd = [gcx_bin, "resources", "push"]
         for item in level_folders:
             cmd.extend(["-p", str(item.repo_path)])
         commands.append(cmd)
 
     resource_pushes = [i for i in push_items if i.kind != "Folder"]
     if resource_pushes:
-        cmd = [gcx_bin, "resources", "push", *ctx_flags]
+        cmd = [gcx_bin, "resources", "push"]
         for item in resource_pushes:
             cmd.extend(["-p", str(item.repo_path)])
         commands.append(cmd)
@@ -294,14 +292,14 @@ def build_gcx_delta_commands(
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:
         selectors = [f"{kind_to_plural[i.kind]}/{i.name}" for i in resource_destroys]
-        cmd = [gcx_bin, "resources", "delete", *selectors, *ctx_flags, "-y"]
+        cmd = [gcx_bin, "resources", "delete", *selectors, "-y"]
         commands.append(cmd)
 
     folder_destroys = [i for i in destroy_items if i.kind == "Folder"]
     for depth in sorted({i.depth for i in folder_destroys}, reverse=True):
         level_folders = [i for i in folder_destroys if i.depth == depth]
         selectors = [f"folders/{i.name}" for i in level_folders]
-        cmd = [gcx_bin, "resources", "delete", *selectors, *ctx_flags, "-y"]
+        cmd = [gcx_bin, "resources", "delete", *selectors, "-y"]
         commands.append(cmd)
 
     return commands

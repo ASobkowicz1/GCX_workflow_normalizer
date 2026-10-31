@@ -170,7 +170,6 @@ def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
 
 def fetch_live_managed_resources(
     gcx_bin: str = "./gcx",
-    context: str | None = None,
 ) -> dict[tuple[str, str], LiveGrafanaResource]:
     """
     Używa `gcx resources pull folders dashboards alertrules` do tymczasowego katalogu,
@@ -178,7 +177,6 @@ def fetch_live_managed_resources(
     Zwraca słownik `{(kind, uid): LiveGrafanaResource}` dla zasobów posiadających nasz deterministyczny UID.
     """
     resources: dict[tuple[str, str], LiveGrafanaResource] = {}
-    ctx_flags = ["--context", context] if context else []
 
     with tempfile.TemporaryDirectory(prefix="gcx-live-state-") as tmp_dir:
         cmd = [
@@ -195,7 +193,6 @@ def fetch_live_managed_resources(
             "--include-managed",
             "--on-error",
             "ignore",
-            *ctx_flags,
         ]
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, check=False)

@@ -109,7 +109,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Force push all files from data directory regardless of diff",
     )
     parser.add_argument("--gcx-bin", default="./gcx", help="Path to gcx binary")
-    parser.add_argument("--context", default=None, help="GCX context name (e.g. dev, tech, prd)")
     parser.add_argument(
         "--skip-gcx", action="store_true", help="Only generate execution plan without invoking gcx"
     )
@@ -144,7 +143,6 @@ def main(argv: list[str] | None = None) -> int:
                 plan,
                 gcx_bin=args.gcx_bin,
                 dry_run=True,
-                context=args.context,
             )
             return _execute_commands(commands, repo_root, is_apply=False)
         return 0
@@ -167,7 +165,6 @@ def main(argv: list[str] | None = None) -> int:
                 plan,
                 gcx_bin=args.gcx_bin,
                 dry_run=False,
-                context=args.context,
             )
             return _execute_commands(commands, repo_root, is_apply=True)
         return 0

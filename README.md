@@ -45,7 +45,7 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
 │   ├── paths.py                        # Walidacja ścieżek i głębokości folderów (maks. 4 poziomy)
 │   └── models.py                       # Dataklasy i typy
 ├── tests/                              # Zestaw testów jednostkowych (pytest)
-└── normalizer-live-grafana-sync/       # Osobne narzędzie audytu/synchronizacji ze stanem żywym (własne README.md)
+└── grafana-live-sync/                  # Osobne narzędzie audytu/synchronizacji ze stanem żywym (własne README.md)
 ```
 
 ---
@@ -83,6 +83,19 @@ python3 -m normalizer plan --repo-root . --data-dir example_repo/data --skip-gcx
 ```bash
 pytest -v
 ```
+
+---
+
+## 🌿 Topologia gałęzi
+
+1. **`main` (Domyślna gałąź repozytorium):**
+   - Techniczna baza repozytorium. Nie jest powiązana z żadnym stackiem w Grafana Cloud (brak wdrożeń).
+   - Z tej gałęzi GitHub Actions wyzwala nocny cron (`schedule`), który dynamicznie audytuje i naprawia drift na 3 środowiskach (`dev`, `tech`, `prd`).
+2. **`prd`, `dev`, `tech` (Główne gałęzie środowiskowe):**
+   - Odpowiadają 1:1 trzem stackom w Grafana Cloud.
+   - Wszelkie zmiany lądują na nich wyłącznie przez Pull Requesty scalane metodą **Squash and merge**.
+3. **Branche użytkowników (Feature branches):**
+   - Rozpoczynają się od prefiksu środowiska (np. `dev/nowy-dashboard`, `tech/alert-cpu`, `prd/fix`) i celują w odpowiednią gałąź (`dev`, `tech` lub `prd`).
 
 ---
 

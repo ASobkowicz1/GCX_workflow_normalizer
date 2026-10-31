@@ -1,0 +1,176 @@
+name: Scheduled Grafana drift auditor (Live API sync)
+
+# Workflow odpowiedzialny za okresowy audyt i naprawianie driftu pomiędzy
+# stanem rzeczywistym w Grafana Cloud a stanem zadeklarowanym w repozytorium Git.
+#
+# ZASADA DZIAŁANIA:
+# 1. Ten sam plik workflow leży na każdej gałęzi środowiskowej (dev, tech, prd).
+# 2. TARGET_ENV to ZAWSZE nazwa środowiska/gałęzi (dev -> dev, tech -> tech, prd -> prd).
+# 3. Nocny cron (schedule) uruchamiany na default branchu automatycznie wykonuje audyt
+#    dla WSZYSTKICH 3 środowisk jednocześnie (macierz dev, tech, prd).
+# 4. Ręczne wywołanie (workflow_dispatch) domyślnie uruchamia się dla gałęzi, na której
+#    zostało kliknięte (target_env: branch), z możliwością uruchomienia dla wszystkich (all).
+on:
+  schedule:
+    # Nocny cron (02:00 UTC) uruchamiany raz na dobę na default branchu
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment to audit/reconcile (all or specific stack)"
+        required: true
+        type: choice
+        options:
+          - all
+          - prd
+          - dev
+          - tech
+        default: all
+      mode:
+        description: "Execution mode: deploy (reconcile/fix drift in Grafana) or plan (report drift only)"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - plan
+        default: deploy
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  resolve_matrix:
+    name: Resolve target environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      environments: ${{ steps.set_matrix.outputs.environments }}
+      mode: ${{ steps.set_matrix.outputs.mode }}
+    steps:
+      - name: Calculate environments matrix
+        id: set_matrix
+        run: |
+          # Blokada: narzędzie Live Drift Auditor może być wywoływane wyłącznie z głównych gałęzi (main, prd, dev, tech)
+          BRANCH="${{ github.ref_name }}"
+          if [[ ! "${BRANCH}" =~ ^(main|prd|dev|tech)$ ]]; then
+            echo "❌ Live Drift Audit is restricted to admin branches (main, prd, dev, tech). Cannot run on user branch '${BRANCH}'."
+            exit 1
+          fi
+
+          EVENT="${{ github.event_name }}"
+          INPUT_ENV="${{ inputs.target_env || 'all' }}"
+          INPUT_MODE="${{ inputs.mode || 'deploy' }}"
+
+          if [ "${EVENT}" = "schedule" ] || [ "${INPUT_ENV}" = "all" ]; then
+            ENVS_JSON='["dev", "tech", "prd"]'
+            MODE="deploy"
+            if [ "${EVENT}" = "workflow_dispatch" ]; then
+              MODE="${INPUT_MODE}"
+            fi
+          else
+            ENVS_JSON="[\"${INPUT_ENV}\"]"
+            MODE="${INPUT_MODE}"
+          fi
+
+          echo "environments=${ENVS_JSON}" >> "$GITHUB_OUTPUT"
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "🎯 Selected environments: ${ENVS_JSON} | Mode: ${MODE}"
+
+  drift_audit:
+    name: Grafana live drift audit (${{ matrix.environment }})
+    needs: resolve_matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: gcx-live-sync-${{ matrix.environment }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.resolve_matrix.outputs.environments) }}
+
+    steps:
+      # KROK 1: Środowisko i gałąź to dokładnie nazwa środowiska z matrycy
+      - name: Setup environment context
+        id: env_ctx
+        run: |
+          TARGET_ENV="${{ matrix.environment }}"
+          MODE="${{ needs.resolve_matrix.outputs.mode }}"
+          echo "TARGET_ENV=${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+          echo "MODE=${MODE}" >> "$GITHUB_OUTPUT"
+          echo "🎯 Target environment (branch): ${TARGET_ENV} | Mode: ${MODE}"
+
+      # KROK 2: Pobranie kodu z gałęzi odpowiadającej danemu środowisku (dev / tech / prd)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.environment }}
+
+      # KROK 3: Przygotowanie binarki GCX
+      - name: Setup GCX
+        run: |
+          if ! command -v gcx &> /dev/null; then
+            if [ -f ".github/bin/gcx-linux-amd64.tar.gz" ]; then
+              tar -xzf .github/bin/gcx-linux-amd64.tar.gz -C /usr/local/bin
+              chmod +x /usr/local/bin/gcx
+            elif [ -f "./gcx" ]; then
+              chmod +x ./gcx
+              sudo mv ./gcx /usr/local/bin/gcx
+            fi
+          fi
+          gcx --version
+
+      # KROK 4: Instalacja zależności Pythona
+      - name: Setup Python
+        run: |
+          python3 -m pip install --quiet pyyaml
+
+      # KROK 5A: Logowanie do AWS OIDC dla danego stacka
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-grafana-${{ matrix.environment }}
+          aws-region: eu-central-1
+
+      # KROK 5B: Pobranie poświadczeń stacka Grafany z AWS SSM
+      - name: Configure Grafana credentials
+        run: |
+          TARGET_ENV="${{ matrix.environment }}"
+          SSM_PARAM_PATH="/grafana/${TARGET_ENV}/config"
+          SSM_JSON=$(aws ssm get-parameter --name "${SSM_PARAM_PATH}" --with-decryption --query "Parameter.Value" --output text)
+
+          GRAFANA_URL=$(echo "${SSM_JSON}" | jq -r '.url')
+          GRAFANA_TOKEN=$(echo "${SSM_JSON}" | jq -r '.token')
+          GRAFANA_STACK_ID=$(echo "${SSM_JSON}" | jq -r '.stack_id')
+
+          echo "::add-mask::${GRAFANA_TOKEN}"
+
+          mkdir -p ~/.config/gcx
+          cat <<EOF > ~/.config/gcx/config.yaml
+          version: 1
+          current-context: default
+          contexts:
+            default:
+              stack: default
+          stacks:
+            default:
+              slug: default
+              grafana:
+                server: ${GRAFANA_URL}
+                token: "${GRAFANA_TOKEN}"
+                auth-method: token
+                stack-id: ${GRAFANA_STACK_ID}
+          EOF
+
+          gcx config check
+
+      # KROK 6: Wykonanie audytu / uzgodnienia stanu żywego
+      - name: Execute drift audit/fix
+        run: |
+          MODE="${{ needs.resolve_matrix.outputs.mode }}"
+          python3 grafana-live-sync/normalizer/cli.py "${MODE}" \
+            --repo-root . \
+            --data-dir grafana \
+            --gcx-bin gcx \
+            --summary-file "summary-${{ matrix.environment }}.md"

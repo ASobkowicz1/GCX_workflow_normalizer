@@ -28,7 +28,7 @@ def test_build_folder_manifest_root_and_nested() -> None:
 
 
 def test_normalize_dashboard_v2_from_example_repo() -> None:
-    path = Path("example_repo/data_dirty/PRD - Applications/Series active-1793109192093.json")
+    path = Path("example_repo/grafana_dirty/PRD - Applications/Series active-1793109192093.json")
     parsed = detect_and_parse(path)
 
     result = normalize_dashboard(
@@ -79,7 +79,7 @@ def test_normalize_dashboard_classic_v1(tmp_path: Path) -> None:
 
 def test_normalize_alertrule_from_example_repo() -> None:
     path = Path(
-        "example_repo/data_dirty/PRD - Infrastructure/Usage/"
+        "example_repo/grafana_dirty/PRD - Infrastructure/Usage/"
         "modify-export-Usage alerts-cg2hxgz5619fkd-1793109505220.yaml"
     )
     parsed = detect_and_parse(path)
@@ -125,4 +125,3 @@ def test_normalize_alertrule_preserves_v1beta1() -> None:
     assert result["metadata"]["name"] == "a-22222222222222222222"
     assert result["metadata"]["annotations"] == {"grafana.app/folder": "f-11111111111111111111"}
     assert result["spec"]["title"] == "Beta Alert"
-

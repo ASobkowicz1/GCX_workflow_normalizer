@@ -92,15 +92,15 @@ def test_full_git_lifecycle_create_update_destroy(tmp_path: Path) -> None:
     assert "Apply: 1 added, 1 changed, 1 destroyed." in summary_apply
 
     # Sprawdźmy wygenerowane komendy GCX w trybie dry_run (validate dla push_items) oraz deploy (validate + push + delete)
-    cmds_dry = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=True, context="prd")
+    cmds_dry = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=True)
     assert len(cmds_dry) == 1
-    assert cmds_dry[0][:4] == ["./gcx", "resources", "validate", "--context"]
+    assert cmds_dry[0][:3] == ["./gcx", "resources", "validate"]
 
     # Sprawdźmy wygenerowane komendy GCX w trybie deploy (1: pre-flight validate, 2: push, 3: delete)
-    cmds = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=False, context="prd")
+    cmds = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=False)
     assert len(cmds) == 3
-    assert cmds[0][:4] == ["./gcx", "resources", "validate", "--context"]
-    assert cmds[1][:4] == ["./gcx", "resources", "push", "--context"]
+    assert cmds[0][:3] == ["./gcx", "resources", "validate"]
+    assert cmds[1][:3] == ["./gcx", "resources", "push"]
     assert "data/PRD/Azure/d-network.yaml" in cmds[1]
     assert "data/PRD/Azure/d-vm-overview.yaml" in cmds[1]
     assert cmds[2] == [
@@ -108,8 +108,6 @@ def test_full_git_lifecycle_create_update_destroy(tmp_path: Path) -> None:
         "resources",
         "delete",
         f"dashboards/{plan.to_destroy[0].name}",
-        "--context",
-        "prd",
         "-y",
     ]
 
