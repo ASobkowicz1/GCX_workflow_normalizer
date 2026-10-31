@@ -337,5 +337,10 @@ def reconcile_data_directory(
                 if not dry_run:
                     folder_manifest_path.unlink()
                 result.deleted_empty_folders.append(folder_manifest_path)
+            if not dry_run and folder_dir.exists():
+                try:
+                    folder_dir.rmdir()
+                except OSError:
+                    pass
 
     return result

@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from normalizer.models import FileKind, ParsedFile
+from live_sync.models import FileKind, ParsedFile
 
 
 def detect_and_parse(file_path: Path) -> ParsedFile:

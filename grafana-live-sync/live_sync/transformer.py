@@ -3,7 +3,7 @@
 import copy
 from typing import Any
 
-from normalizer.models import ParsedFile
+from live_sync.models import ParsedFile
 
 
 def build_folder_manifest(

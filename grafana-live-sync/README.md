@@ -9,7 +9,7 @@ Służy jako **Audytor Driftu (Scheduled Cron / Audyt na żądanie)** do weryfik
 ## 🎯 Jak działa narzędzie?
 
 1. **Pobranie stanu z Grafana Cloud:**
-   - Moduł `normalizer/grafana_state.py` łączy się ze stackiem Grafany (odczytując poświadczenia z `~/.config/gcx/config.yaml`) i pobiera listę zasobów `Folder`, `Dashboard` oraz `AlertRule`.
+   - Moduł `live_sync/grafana_state.py` łączy się ze stackiem Grafany (odczytując poświadczenia z `~/.config/gcx/config.yaml`) i pobiera listę zasobów `Folder`, `Dashboard` oraz `AlertRule`.
    - **100% ochrona zasobów ręcznych:** Filtr `is_managed_uid()` analizuje wyłącznie zasoby zarządzane przez repozytorium (posiadające deterministyczne prefiksy `f-`, `d-`, `a-`). Wszystkie zasoby utworzone ręcznie w UI mają inne identyfikatory i **nigdy nie zostaną zmodyfikowane ani usunięte**.
 
 2. **Porównanie 1:1 (Repozytorium kontra żywa Grafana):**
@@ -34,11 +34,11 @@ Narzędzie służy wyłącznie administratorom i działa wyłącznie na oficjaln
 ### 1. Tryb audytu (Plan / Dry-Run):
 Wykrywa różnice i wyświetla raport Terraform-style bez wprowadzania jakichkolwiek zmian:
 ```bash
-python3 grafana-live-sync/normalizer/cli.py plan --repo-root . --data-dir grafana --gcx-bin gcx --summary-file plan.md
+python3 grafana-live-sync/live_sync/cli.py plan --repo-root . --data-dir grafana --gcx-bin gcx --summary-file plan.md
 ```
 
 ### 2. Tryb uzgodnienia (Deploy / Apply):
 Wymusza stan z repozytorium na klastrze Grafany (naprawia wykryty drift):
 ```bash
-python3 grafana-live-sync/normalizer/cli.py deploy --repo-root . --data-dir grafana --gcx-bin gcx --summary-file plan.md
+python3 grafana-live-sync/live_sync/cli.py deploy --repo-root . --data-dir grafana --gcx-bin gcx --summary-file plan.md
 ```

@@ -169,7 +169,7 @@ jobs:
       - name: Execute drift audit/fix
         run: |
           MODE="${{ needs.resolve_matrix.outputs.mode }}"
-          python3 grafana-live-sync/normalizer/cli.py "${MODE}" \
+          python3 grafana-live-sync/live_sync/cli.py "${MODE}" \
             --repo-root . \
             --data-dir grafana \
             --gcx-bin gcx \

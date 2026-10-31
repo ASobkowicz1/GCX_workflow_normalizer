@@ -6,15 +6,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Umożliwia uruchomienie skryptu bezpośrednio (`python3 grafana-live-sync/live_sync/cli.py`)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from normalizer.grafana_state import fetch_live_managed_resources
-from normalizer.planner import (
+from live_sync.grafana_state import fetch_live_managed_resources
+from live_sync.planner import (
     build_gcx_delta_commands,
     build_live_state_plan,
     format_terraform_summary,
 )
-from normalizer.reconciler import reconcile_data_directory
+from live_sync.reconciler import reconcile_data_directory
 
 
 def _write_summary(markdown: str, output_file: Path | None = None) -> None:
@@ -74,7 +75,7 @@ def _execute_commands(commands: list[list[str]], repo_root: Path, is_apply: bool
 def main(argv: list[str] | None = None) -> int:
     """Główny punkt wejścia programu obsługujący argumenty wiersza poleceń."""
     parser = argparse.ArgumentParser(
-        prog="normalizer",
+        prog="live_sync",
         description="GCX GitOps Live Drift Auditor & Reconciler",
     )
     parser.add_argument(
@@ -86,7 +87,9 @@ def main(argv: list[str] | None = None) -> int:
         "--repo-root", type=Path, default=Path(), help="Path to Git repository root"
     )
     parser.add_argument(
-        "--data-dir", default="grafana", help="Subdirectory with Grafana resources (default: grafana)"
+        "--data-dir",
+        default="grafana",
+        help="Subdirectory with Grafana resources (default: grafana)",
     )
     parser.add_argument("--gcx-bin", default="./gcx", help="Path to gcx binary")
     parser.add_argument(
@@ -110,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"## Found {len(live_resources)} repository managed resources (f-/d-/a-) in Grafana.\n")
 
     if args.mode == "plan":
-        rec_result = reconcile_data_directory(data_root, dry_run=False)
+        rec_result = reconcile_data_directory(data_root)
         plan = build_live_state_plan(
             repo_root=repo_root,
             live_resources=live_resources,
@@ -133,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.mode == "deploy":
-        rec_result = reconcile_data_directory(data_root, dry_run=False)
+        rec_result = reconcile_data_directory(data_root)
         plan = build_live_state_plan(
             repo_root=repo_root,
             live_resources=live_resources,

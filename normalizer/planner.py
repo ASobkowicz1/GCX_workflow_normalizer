@@ -231,7 +231,15 @@ def build_delta_plan(
         PlanActionType.UPDATE: 2,
         PlanActionType.DESTROY: 3,
     }
-    plan.items.sort(key=lambda item: (action_order[item.action], item.depth, str(item.repo_path)))
+
+    def _sort_key(item: PlanItem):
+        if item.action == PlanActionType.DESTROY:
+            kind_prio = 0 if item.kind != "Folder" else 1
+            return (action_order[item.action], -item.depth, kind_prio, str(item.repo_path))
+        kind_prio = 0 if item.kind == "Folder" else 1
+        return (action_order[item.action], item.depth, kind_prio, str(item.repo_path))
+
+    plan.items.sort(key=_sort_key)
     return plan
 
 
