@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-MANAGED_UID_PATTERN = re.compile(r"^(f|d|a)-[0-9a-f]{20}$")
+MANAGED_UID_PATTERN = re.compile(r"^(f|d|a|r)-[0-9a-f]{20}$")
 DURATION_PART_RE = re.compile(r"(\d+)(ns|us|µs|ms|s|m|h|d|w)")
 
 
@@ -165,6 +165,48 @@ def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
             "notificationSettings": norm_notif if isinstance(norm_notif, dict) else {},
         }
 
+    if kind == "RecordingRule":
+        raw_exprs = cleaned.get("expressions")
+        norm_exprs = {}
+        if isinstance(raw_exprs, dict):
+            for ref_id, expr_obj in sorted(raw_exprs.items()):
+                if not isinstance(expr_obj, dict):
+                    continue
+                model = _strip_empty_and_defaults(expr_obj.get("model", {}))
+                entry: dict[str, Any] = {
+                    "model": model,
+                    "source": bool(expr_obj.get("source", False)),
+                }
+                ds_uid = expr_obj.get("datasourceUID")
+                if ds_uid and ds_uid != "__expr__":
+                    entry["datasourceUID"] = str(ds_uid)
+                q_type = expr_obj.get("queryType")
+                if q_type:
+                    entry["queryType"] = str(q_type)
+                rtr = expr_obj.get("relativeTimeRange")
+                if isinstance(rtr, dict):
+                    rtr_from = _normalize_duration(rtr.get("from", 0))
+                    rtr_to = _normalize_duration(rtr.get("to", 0))
+                    if not (rtr_from == "0s" and rtr_to == "0s"):
+                        entry["relativeTimeRange"] = {
+                            "from": rtr_from,
+                            "to": rtr_to,
+                        }
+                norm_exprs[str(ref_id)] = entry
+
+        trigger = cleaned.get("trigger") if isinstance(cleaned.get("trigger"), dict) else {}
+        return {
+            "title": str(cleaned.get("title", "")).strip(),
+            "metric": str(cleaned.get("metric", "")).strip(),
+            "targetDatasourceUID": str(
+                cleaned.get("targetDatasourceUID") or cleaned.get("target_datasource_uid", "")
+            ).strip(),
+            "paused": bool(cleaned.get("paused", False)),
+            "trigger_interval": _normalize_duration(trigger.get("interval", "1m")),
+            "expressions": norm_exprs,
+            "labels": _strip_empty_and_defaults(cleaned.get("labels") or {}),
+        }
+
     return cleaned
 
 
@@ -172,7 +214,7 @@ def fetch_live_managed_resources(
     gcx_bin: str = "./gcx",
 ) -> dict[tuple[str, str], LiveGrafanaResource]:
     """
-    Używa `gcx resources pull folders dashboards alertrules` do tymczasowego katalogu,
+    Używa `gcx resources pull folders dashboards alertrules recordingrules` do tymczasowego katalogu,
     dzięki czemu działa zarówno z lokalnym logowaniem OAuth (macOS Keychain), jak i tokenami w CI/CD.
     Zwraca słownik `{(kind, uid): LiveGrafanaResource}` dla zasobów posiadających nasz deterministyczny UID.
     """
@@ -186,6 +228,7 @@ def fetch_live_managed_resources(
             "folders",
             "dashboards",
             "alertrules",
+            "recordingrules",
             "-p",
             tmp_dir,
             "-o",
@@ -218,7 +261,7 @@ def fetch_live_managed_resources(
                 continue
 
             kind = str(item.get("kind", ""))
-            if kind not in ("Folder", "Dashboard", "AlertRule"):
+            if kind not in ("Folder", "Dashboard", "AlertRule", "RecordingRule"):
                 continue
 
             meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}

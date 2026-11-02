@@ -1,0 +1,33 @@
+apiVersion: rules.alerting.grafana.app/v0alpha1
+kind: RecordingRule
+metadata:
+  name: r-7b02c46b6453c0c7caef
+  annotations:
+    grafana.app/folder: f-2d0c2bf9e54e439d555f
+spec:
+  title: recruletest
+  metric:
+    metric: recruletest
+    from: A
+    targetDatasourceUid: grafanacloud-prom
+  targetDatasourceUID: ''
+  expressions:
+    A:
+      model:
+        datasource:
+          type: prometheus
+          uid: grafanacloud-play-prom
+        editorMode: code
+        expr: avg(alloy_prometheus_relabel_cache_hits{job="alloy"}) by (component_id)
+        instant: true
+        intervalMs: 1000
+        legendFormat: __auto
+        maxDataPoints: 43200
+        range: false
+        refId: A
+      datasourceUID: grafanacloud-play-prom
+      relativeTimeRange:
+        from: 600s
+        to: 0s
+  trigger:
+    interval: 1m

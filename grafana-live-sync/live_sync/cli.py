@@ -30,12 +30,12 @@ def _write_summary(markdown: str, output_file: Path | None = None) -> None:
 
 
 def _filter_gcx_output(text: str) -> str:
-    """Ukrywa nadmiarowe komunikaty informacyjne GCX (auto-approval, brak server-side dry-run dla alertrules)."""
+    """Ukrywa nadmiarowe komunikaty informacyjne GCX (auto-approval, brak server-side dry-run dla alertrules/recordingrules)."""
     filtered_lines: list[str] = []
     for line in text.splitlines():
         if "Auto-approval enabled: automatically setting --force" in line:
             continue
-        if "alertrules.rules.alerting.grafana.app does not support server-side dry-run" in line:
+        if "does not support server-side dry-run" in line:
             continue
         if "skipped (server-side dry-run unsupported, not verified)" in line:
             line = "✔ No errors found."

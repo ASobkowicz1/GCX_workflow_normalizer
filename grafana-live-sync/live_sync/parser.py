@@ -68,11 +68,31 @@ def detect_and_parse(file_path: Path) -> ParsedFile:
         )
         return ParsedFile(path=file_path, kind=alert_kind, data=data, title=title)
 
+    # 4. Rozpoznanie RecordingRule (format k8s v0alpha1 / v1beta1)
+    if api_version.startswith("rules.alerting.grafana.app/") and kind == "RecordingRule":
+        title = data.get("spec", {}).get("title") or data.get("spec", {}).get("metric")
+        rec_kind = (
+            FileKind.CANONICAL_RECORDINGRULE
+            if is_canonical_uid("r")
+            else FileKind.RAW_UI_RECORDINGRULE
+        )
+        return ParsedFile(path=file_path, kind=rec_kind, data=data, title=title)
+
     if api_version == "1" and isinstance(data.get("groups"), list):
         groups = data["groups"]
         rules = groups[0].get("rules", []) if groups and isinstance(groups[0], dict) else []
-        title = rules[0].get("title") if rules and isinstance(rules[0], dict) else None
-        return ParsedFile(path=file_path, kind=FileKind.RAW_UI_ALERTRULE, data=data, title=title)
+        if rules and isinstance(rules[0], dict):
+            first_rule = rules[0]
+            if "record" in first_rule:
+                title = first_rule.get("record") or first_rule.get("title")
+                return ParsedFile(
+                    path=file_path,
+                    kind=FileKind.RAW_UI_RECORDINGRULE,
+                    data=data,
+                    title=title,
+                )
+            title = first_rule.get("title")
+            return ParsedFile(path=file_path, kind=FileKind.RAW_UI_ALERTRULE, data=data, title=title)
 
     return ParsedFile(
         path=file_path,

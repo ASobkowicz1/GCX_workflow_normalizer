@@ -139,12 +139,20 @@ def test_folder_ordering_in_gcx_commands(tmp_path: Path) -> None:
     plan_create = build_delta_plan(repo, data_subdir="data", base_ref="HEAD")
     cmds_create = build_gcx_delta_commands(plan_create, gcx_bin="./gcx")
 
-    # 4 komendy: 0) Pre-flight validate, 1) Push folderu L1 (PRD), 2) Push folderu L2 (PRD/Usage), 3) Push dashboardu
-    assert len(cmds_create) == 4
+    # 2 komendy: 0) Pre-flight validate, 1) Skonsolidowany push w porządku topologicznym (L1 -> L2 -> Dashboard)
+    assert len(cmds_create) == 2
     assert cmds_create[0][0:3] == ["./gcx", "resources", "validate"]
-    assert cmds_create[1] == ["./gcx", "resources", "push", "-p", "data/PRD/folder.yaml"]
-    assert cmds_create[2] == ["./gcx", "resources", "push", "-p", "data/PRD/Usage/folder.yaml"]
-    assert cmds_create[3] == ["./gcx", "resources", "push", "-p", "data/PRD/Usage/d-my-dash.yaml"]
+    assert cmds_create[1] == [
+        "./gcx",
+        "resources",
+        "push",
+        "-p",
+        "data/PRD/folder.yaml",
+        "-p",
+        "data/PRD/Usage/folder.yaml",
+        "-p",
+        "data/PRD/Usage/d-my-dash.yaml",
+    ]
 
 
 def test_zero_commit_sha_from_github_actions_new_branch(tmp_path: Path) -> None:

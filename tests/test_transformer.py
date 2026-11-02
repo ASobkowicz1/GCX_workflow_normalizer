@@ -7,6 +7,7 @@ from normalizer.transformer import (
     build_folder_manifest,
     normalize_alertrule,
     normalize_dashboard,
+    normalize_recordingrule,
 )
 
 
@@ -156,3 +157,57 @@ def test_normalize_alertrule_notification_settings_simplified_routing() -> None:
         "receiver": "slack-channel",
         "type": "SimplifiedRouting",
     }
+
+
+def test_normalize_recordingrule_k8s_and_raw(tmp_path: Path) -> None:
+    """Sprawdza normalizację reguły RecordingRule z formatu k8s (GCX) z oczyszczeniem metadanych."""
+    raw_k8s = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "annotations": {
+                "grafana.app/folder": "ftjc75",
+                "grafana.app/updatedBy": "efeq716xkuy2oe",
+                "grafana.app/updatedTimestamp": "2026-11-02T19:37:12Z",
+            },
+            "name": "eg346hevv6m0wf",
+            "namespace": "stacks-1542617",
+            "resourceVersion": "1",
+            "uid": "4954dac3-74d5-4187-8866-286ee667140a",
+        },
+        "spec": {
+            "title": "recruletest",
+            "metric": "recruletest",
+            "targetDatasourceUID": "grafanacloud-prom",
+            "trigger": {"interval": "1m"},
+            "expressions": {
+                "A": {
+                    "datasourceUID": "grafanacloud-play-prom",
+                    "model": {"expr": "avg(rate(http_requests[5m]))"},
+                }
+            },
+        },
+    }
+    file_path = tmp_path / "raw-recrule.yaml"
+    import yaml
+
+    file_path.write_text(yaml.safe_dump(raw_k8s), encoding="utf-8")
+    parsed = detect_and_parse(file_path)
+    assert parsed.kind == FileKind.RAW_UI_RECORDINGRULE
+
+    res = normalize_recordingrule(
+        parsed,
+        folder_uid="f-11111111111111111111",
+        recordingrule_uid="r-22222222222222222222",
+    )
+    assert res["apiVersion"] == CANONICAL_ALERT_API_VERSION
+    assert res["kind"] == "RecordingRule"
+    assert res["metadata"] == {
+        "name": "r-22222222222222222222",
+        "annotations": {"grafana.app/folder": "f-11111111111111111111"},
+    }
+    assert res["spec"]["title"] == "recruletest"
+    assert res["spec"]["metric"] == "recruletest"
+    assert res["spec"]["targetDatasourceUID"] == "grafanacloud-prom"
+    assert "uid" not in res["metadata"]
+    assert "resourceVersion" not in res["metadata"]

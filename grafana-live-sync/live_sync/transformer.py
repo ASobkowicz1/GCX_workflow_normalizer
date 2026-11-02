@@ -140,3 +140,82 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
         },
         "spec": spec,
     }
+
+
+def normalize_recordingrule(
+    parsed: ParsedFile, folder_uid: str, recordingrule_uid: str
+) -> dict[str, Any]:
+    """
+    Normalizuje surowy eksport RecordingRule lub plik pobrany z UI
+    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v0alpha1`).
+    """
+    if not parsed.data:
+        raise ValueError("input data cannot be empty")
+    raw = copy.deepcopy(parsed.data)
+    target_api_version = CANONICAL_ALERT_API_VERSION
+    if "spec" in raw and raw.get("kind") == "RecordingRule":
+        spec: dict[str, Any] = raw["spec"]
+    elif "groups" in raw and raw.get("apiVersion") == 1:
+        group = raw["groups"][0]
+        rule = group["rules"][0]
+        interval = group.get("interval", "1m")
+        expressions: dict[str, Any] = {}
+        for item in rule.get("data", []):
+            ref_id = item["refId"]
+            expr_entry: dict[str, Any] = {"model": item["model"]}
+            if item.get("datasourceUid") and item.get("datasourceUid") != "__expr__":
+                expr_entry["datasourceUID"] = item["datasourceUid"]
+            if item.get("queryType"):
+                expr_entry["queryType"] = item["queryType"]
+            if "relativeTimeRange" in item:
+                rtr = item["relativeTimeRange"]
+                from_val = rtr.get("from", 0)
+                to_val = rtr.get("to", 0)
+                expr_entry["relativeTimeRange"] = {
+                    "from": f"{from_val}s" if isinstance(from_val, int) else str(from_val),
+                    "to": f"{to_val}s" if isinstance(to_val, int) else str(to_val),
+                }
+            expressions[ref_id] = expr_entry
+
+        metric_name = (
+            rule.get("record") or rule.get("metric") or rule.get("title", "unnamed_metric")
+        )
+        spec = {
+            "title": rule.get("title") or metric_name,
+            "metric": metric_name,
+            "targetDatasourceUID": rule.get("targetDatasourceUid")
+            or rule.get("targetDatasourceUID", ""),
+            "expressions": expressions,
+            "trigger": {"interval": interval},
+        }
+        if rule.get("labels"):
+            spec["labels"] = rule["labels"]
+        if rule.get("paused") or rule.get("isPaused"):
+            spec["paused"] = True
+    else:
+        raise ValueError("unsupported recording rule format")
+
+    cleaned_spec: dict[str, Any] = {
+        "title": spec.get("title") or spec.get("metric", "recording-rule"),
+        "metric": spec.get("metric") or spec.get("title", "metric"),
+        "targetDatasourceUID": spec.get("targetDatasourceUID")
+        or spec.get("target_datasource_uid", ""),
+        "expressions": spec.get("expressions", {}),
+        "trigger": spec.get("trigger", {"interval": "1m"}),
+    }
+    if spec.get("labels"):
+        cleaned_spec["labels"] = spec["labels"]
+    if spec.get("paused") is not None:
+        cleaned_spec["paused"] = spec["paused"]
+
+    return {
+        "apiVersion": target_api_version,
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": recordingrule_uid,
+            "annotations": {
+                "grafana.app/folder": folder_uid,
+            },
+        },
+        "spec": cleaned_spec,
+    }

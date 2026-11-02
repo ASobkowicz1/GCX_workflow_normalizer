@@ -105,6 +105,7 @@ def build_live_state_plan(
                     FileKind.CANONICAL_FOLDER,
                     FileKind.CANONICAL_DASHBOARD,
                     FileKind.CANONICAL_ALERTRULE,
+                    FileKind.CANONICAL_RECORDINGRULE,
                 )
                 or not parsed.data
             ):
@@ -257,6 +258,7 @@ def build_gcx_delta_commands(
     kind_to_plural = {
         "Dashboard": "dashboards",
         "AlertRule": "alertrules",
+        "RecordingRule": "recordingrules",
         "Folder": "folders",
     }
 
@@ -274,20 +276,14 @@ def build_gcx_delta_commands(
             validate_cmd.extend(["-p", str(item.repo_path)])
         commands.append(validate_cmd)
 
-    folder_pushes = [i for i in push_items if i.kind == "Folder"]
-    for depth in sorted({i.depth for i in folder_pushes}):
-        level_folders = [i for i in folder_pushes if i.depth == depth]
-        cmd = [gcx_bin, "resources", "push"]
-        for item in level_folders:
-            cmd.extend(["-p", str(item.repo_path)])
-        commands.append(cmd)
-
-    resource_pushes = [i for i in push_items if i.kind != "Folder"]
-    if resource_pushes:
-        cmd = [gcx_bin, "resources", "push"]
-        for item in resource_pushes:
-            cmd.extend(["-p", str(item.repo_path)])
-        commands.append(cmd)
+        sorted_pushes = sorted(
+            push_items,
+            key=lambda i: (0 if i.kind == "Folder" else 1, i.depth, str(i.repo_path)),
+        )
+        push_cmd = [gcx_bin, "resources", "push"]
+        for item in sorted_pushes:
+            push_cmd.extend(["-p", str(item.repo_path)])
+        commands.append(push_cmd)
 
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:

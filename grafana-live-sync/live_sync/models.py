@@ -12,8 +12,10 @@ class FileKind(StrEnum):
     CANONICAL_FOLDER = "canonical_folder"
     CANONICAL_DASHBOARD = "canonical_dashboard"
     CANONICAL_ALERTRULE = "canonical_alertrule"
+    CANONICAL_RECORDINGRULE = "canonical_recordingrule"
     RAW_UI_DASHBOARD = "raw_ui_dashboard"
     RAW_UI_ALERTRULE = "raw_ui_alertrule"
+    RAW_UI_RECORDINGRULE = "raw_ui_recordingrule"
     IGNORED = "ignored"
     INVALID = "invalid"
 

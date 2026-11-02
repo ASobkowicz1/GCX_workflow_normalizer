@@ -51,6 +51,7 @@ def test_is_managed_uid_protection() -> None:
     assert is_managed_uid("f-1234567890abcdef1234") is True
     assert is_managed_uid("d-abcdef0123456789abcd") is True
     assert is_managed_uid("a-00000000000000000000") is True
+    assert is_managed_uid("r-11111111111111111111") is True
 
     # Ręcznie utworzone w UI Grafany lub o innym formacie:
     assert is_managed_uid("ad-hoc-dashboard") is False

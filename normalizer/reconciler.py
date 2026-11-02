@@ -28,6 +28,7 @@ from normalizer.transformer import (
     build_folder_manifest,
     normalize_alertrule,
     normalize_dashboard,
+    normalize_recordingrule,
 )
 
 FOLDER_MANIFEST_NAME = "folder.yaml"
@@ -43,6 +44,7 @@ class _CandidateResource:
     target_filename: str
     is_raw: bool
     is_alert: bool
+    is_recording: bool = False
 
 
 def _expand_parsed_file_to_candidates(
@@ -55,7 +57,7 @@ def _expand_parsed_file_to_candidates(
     Dla dashboardów nadaje docelową nazwę pliku z prefiksem `d-<slug>.yaml`.
     """
     if (
-        parsed.kind in (FileKind.RAW_UI_ALERTRULE,)
+        parsed.kind in (FileKind.RAW_UI_ALERTRULE, FileKind.RAW_UI_RECORDINGRULE)
         and parsed.data
         and parsed.data.get("apiVersion") == 1
     ):
@@ -66,13 +68,16 @@ def _expand_parsed_file_to_candidates(
             for rule in group.get("rules", []):
                 if not isinstance(rule, dict):
                     continue
-                rule_title = str(rule.get("title", "")).strip()
+                is_rec = "record" in rule
+                rule_title = str(
+                    rule.get("record") if is_rec else rule.get("title", "")
+                ).strip()
                 if not rule_title:
                     issues.append(
                         ValidationIssue(
                             path=parsed.path,
                             severity=IssueSeverity.ERROR,
-                            message="Alert rule in exported group is missing a title",
+                            message="Rule in exported group is missing a title/record name",
                         )
                     )
                     continue
@@ -88,18 +93,20 @@ def _expand_parsed_file_to_candidates(
                 }
                 single_parsed = ParsedFile(
                     path=parsed.path,
-                    kind=FileKind.RAW_UI_ALERTRULE,
+                    kind=FileKind.RAW_UI_RECORDINGRULE if is_rec else FileKind.RAW_UI_ALERTRULE,
                     data=single_rule_data,
                     title=rule_title,
                 )
-                target_name = slugify_filename(rule_title, ".yaml", prefix="a")
+                prefix = "r" if is_rec else "a"
+                target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
                 candidates.append(
                     _CandidateResource(
                         source_file=single_parsed,
                         title=rule_title,
                         target_filename=target_name,
                         is_raw=True,
-                        is_alert=True,
+                        is_alert=not is_rec,
+                        is_recording=is_rec,
                     )
                 )
         return candidates
@@ -116,9 +123,22 @@ def _expand_parsed_file_to_candidates(
         return []
 
     is_alert = parsed.kind in (FileKind.RAW_UI_ALERTRULE, FileKind.CANONICAL_ALERTRULE)
-    file_prefix = "a" if is_alert else "d"
+    is_recording = parsed.kind in (
+        FileKind.RAW_UI_RECORDINGRULE,
+        FileKind.CANONICAL_RECORDINGRULE,
+    )
+    if is_alert:
+        file_prefix = "a"
+    elif is_recording:
+        file_prefix = "r"
+    else:
+        file_prefix = "d"
     target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
-    is_raw = parsed.kind in (FileKind.RAW_UI_DASHBOARD, FileKind.RAW_UI_ALERTRULE)
+    is_raw = parsed.kind in (
+        FileKind.RAW_UI_DASHBOARD,
+        FileKind.RAW_UI_ALERTRULE,
+        FileKind.RAW_UI_RECORDINGRULE,
+    )
 
     return [
         _CandidateResource(
@@ -127,6 +147,7 @@ def _expand_parsed_file_to_candidates(
             target_filename=target_name,
             is_raw=is_raw,
             is_alert=is_alert,
+            is_recording=is_recording,
         )
     ]
 
@@ -294,6 +315,9 @@ def reconcile_data_directory(
             if winner.is_alert:
                 alert_uid = generate_uid("a", canonical_path, winner.title)
                 manifest = normalize_alertrule(winner.source_file, folder_uid, alert_uid)
+            elif winner.is_recording:
+                rec_uid = generate_uid("r", canonical_path, winner.title)
+                manifest = normalize_recordingrule(winner.source_file, folder_uid, rec_uid)
             else:
                 dashboard_uid = generate_uid("d", canonical_path, winner.title)
                 manifest = normalize_dashboard(winner.source_file, folder_uid, dashboard_uid)

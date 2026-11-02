@@ -28,6 +28,7 @@ from live_sync.transformer import (
     build_folder_manifest,
     normalize_alertrule,
     normalize_dashboard,
+    normalize_recordingrule,
 )
 
 FOLDER_MANIFEST_NAME = "folder.yaml"
@@ -43,6 +44,7 @@ class _CandidateResource:
     target_filename: str
     is_raw: bool
     is_alert: bool
+    is_recording: bool = False
 
 
 def _expand_parsed_file_to_candidates(
@@ -51,7 +53,7 @@ def _expand_parsed_file_to_candidates(
 ) -> list[_CandidateResource]:
     """Przekształca wczytany plik w listę zasobów-kandydatów."""
     if (
-        parsed.kind in (FileKind.RAW_UI_ALERTRULE,)
+        parsed.kind in (FileKind.RAW_UI_ALERTRULE, FileKind.RAW_UI_RECORDINGRULE)
         and parsed.data
         and parsed.data.get("apiVersion") == 1
     ):
@@ -62,13 +64,16 @@ def _expand_parsed_file_to_candidates(
             for rule in group.get("rules", []):
                 if not isinstance(rule, dict):
                     continue
-                rule_title = str(rule.get("title", "")).strip()
+                is_rec = "record" in rule
+                rule_title = str(
+                    rule.get("record") if is_rec else rule.get("title", "")
+                ).strip()
                 if not rule_title:
                     issues.append(
                         ValidationIssue(
                             path=parsed.path,
                             severity=IssueSeverity.ERROR,
-                            message="Alert rule in exported group is missing a title",
+                            message="Rule in exported group is missing a title/record name",
                         )
                     )
                     continue
@@ -84,18 +89,20 @@ def _expand_parsed_file_to_candidates(
                 }
                 single_parsed = ParsedFile(
                     path=parsed.path,
-                    kind=FileKind.RAW_UI_ALERTRULE,
+                    kind=FileKind.RAW_UI_RECORDINGRULE if is_rec else FileKind.RAW_UI_ALERTRULE,
                     data=single_rule_data,
                     title=rule_title,
                 )
-                target_name = slugify_filename(rule_title, ".yaml", prefix="a")
+                prefix = "r" if is_rec else "a"
+                target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
                 candidates.append(
                     _CandidateResource(
                         source_file=single_parsed,
                         title=rule_title,
                         target_filename=target_name,
                         is_raw=True,
-                        is_alert=True,
+                        is_alert=not is_rec,
+                        is_recording=is_rec,
                     )
                 )
         return candidates
@@ -112,9 +119,22 @@ def _expand_parsed_file_to_candidates(
         return []
 
     is_alert = parsed.kind in (FileKind.RAW_UI_ALERTRULE, FileKind.CANONICAL_ALERTRULE)
-    file_prefix = "a" if is_alert else "d"
+    is_recording = parsed.kind in (
+        FileKind.RAW_UI_RECORDINGRULE,
+        FileKind.CANONICAL_RECORDINGRULE,
+    )
+    if is_alert:
+        file_prefix = "a"
+    elif is_recording:
+        file_prefix = "r"
+    else:
+        file_prefix = "d"
     target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
-    is_raw = parsed.kind in (FileKind.RAW_UI_DASHBOARD, FileKind.RAW_UI_ALERTRULE)
+    is_raw = parsed.kind in (
+        FileKind.RAW_UI_DASHBOARD,
+        FileKind.RAW_UI_ALERTRULE,
+        FileKind.RAW_UI_RECORDINGRULE,
+    )
 
     return [
         _CandidateResource(
@@ -123,6 +143,7 @@ def _expand_parsed_file_to_candidates(
             target_filename=target_name,
             is_raw=is_raw,
             is_alert=is_alert,
+            is_recording=is_recording,
         )
     ]
 
@@ -193,11 +214,18 @@ def _reconcile_single_directory(
 
     for cand in title_to_candidate.values():
         target_path = dir_path / cand.target_filename
-        prefix = "a" if cand.is_alert else "d"
+        if cand.is_alert:
+            prefix = "a"
+        elif cand.is_recording:
+            prefix = "r"
+        else:
+            prefix = "d"
         resource_uid = generate_uid(prefix, canonical_folder, cand.title)
 
         if cand.is_alert:
             manifest = normalize_alertrule(cand.source_file, folder_uid, resource_uid)
+        elif cand.is_recording:
+            manifest = normalize_recordingrule(cand.source_file, folder_uid, resource_uid)
         else:
             manifest = normalize_dashboard(cand.source_file, folder_uid, resource_uid)
 

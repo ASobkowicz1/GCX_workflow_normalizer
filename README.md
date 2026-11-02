@@ -1,6 +1,6 @@
 # Grafana Observability as Code (GCX GitOps Workflow)
 
-Produkcyjne środowisko GitOps do zarządzania zasobami Grafany (Dashboardy, Foldery wielopoziomowe L1–L4, Alert Rules) przy użyciu oficjalnego narzędzia **Grafana CLI (`gcx`)**, silnika normalizacji w Pythonie (`normalizer`) oraz **GitHub Actions**.
+Produkcyjne środowisko GitOps do zarządzania zasobami Grafany (Dashboardy, Foldery wielopoziomowe L1–L4, Alert Rules oraz Recording Rules) przy użyciu oficjalnego narzędzia **Grafana CLI (`gcx`)**, silnika normalizacji w Pythonie (`normalizer`) oraz **GitHub Actions**.
 
 ---
 
@@ -31,7 +31,8 @@ W środowisku produkcyjnym, w którym foldery zarządzane z repozytorium są chr
 │   ├── PRD - Applications/
 │   │   ├── folder.yaml
 │   │   ├── d-series-active.yaml
-│   │   └── a-error-rate.yaml
+│   │   ├── a-error-rate.yaml
+│   │   └── r-request-rate.yaml
 │   └── PRD - Infrastructure/
 │       ├── folder.yaml
 │       └── Usage/

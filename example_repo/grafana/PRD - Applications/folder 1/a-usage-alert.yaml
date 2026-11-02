@@ -1,0 +1,60 @@
+apiVersion: rules.alerting.grafana.app/v0alpha1
+kind: AlertRule
+metadata:
+  name: a-d768d16b6a6e6cfb0eda
+  annotations:
+    grafana.app/folder: f-d8f2bfb1ae11685dc4a7
+spec:
+  title: Usage alert
+  for: 1m
+  noDataState: NoData
+  execErrState: Error
+  expressions:
+    A:
+      model:
+        datasource:
+          type: prometheus
+          uid: grafanacloud-usage
+        editorMode: code
+        expr: grafanacloud_grafana_instance_active_users
+        instant: true
+        intervalMs: 1000
+        legendFormat: __auto
+        maxDataPoints: 43200
+        range: false
+        refId: A
+      datasourceUID: grafanacloud-usage
+      relativeTimeRange:
+        from: 600s
+        to: 0s
+    C:
+      model:
+        conditions:
+        - evaluator:
+            params:
+            - 2
+            type: gt
+          operator:
+            type: and
+          query:
+            params:
+            - C
+          reducer:
+            params: []
+            type: last
+          type: query
+        datasource:
+          type: __expr__
+          uid: __expr__
+        expression: A
+        intervalMs: 1000
+        maxDataPoints: 43200
+        refId: C
+        type: threshold
+      queryType: expression
+      source: true
+  trigger:
+    interval: 1m
+  notificationSettings:
+    receiver: empty
+    type: SimplifiedRouting

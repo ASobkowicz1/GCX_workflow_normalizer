@@ -149,6 +149,7 @@ def build_delta_plan(
                     FileKind.CANONICAL_FOLDER,
                     FileKind.CANONICAL_DASHBOARD,
                     FileKind.CANONICAL_ALERTRULE,
+                    FileKind.CANONICAL_RECORDINGRULE,
                 )
                 or not parsed.data
             ):
@@ -320,6 +321,7 @@ def build_gcx_delta_commands(
     kind_to_plural = {
         "Dashboard": "dashboards",
         "AlertRule": "alertrules",
+        "RecordingRule": "recordingrules",
         "Folder": "folders",
     }
 
@@ -340,24 +342,20 @@ def build_gcx_delta_commands(
             validate_cmd.extend(["-p", str(item.repo_path)])
         commands.append(validate_cmd)
 
-    # 1. Push Folderów poziom po poziomie (1 -> 2 -> 3 -> 4)
-    folder_pushes = [i for i in push_items if i.kind == "Folder"]
-    for depth in sorted({i.depth for i in folder_pushes}):
-        level_folders = [i for i in folder_pushes if i.depth == depth]
-        cmd = [gcx_bin, "resources", "push"]
-        for item in level_folders:
-            cmd.extend(["-p", str(item.repo_path)])
-        commands.append(cmd)
+        # 1. Skonsolidowany push wszystkich dodawanych/zmienianych zasobów w jednym poleceniu GCX.
+        # Zasoby są uporządkowane topologicznie:
+        # najpierw Foldery od poziomu L1 do L4 (rodzic przed dzieckiem),
+        # a następnie Dashboardy i AlertRules należące do tych folderów.
+        sorted_pushes = sorted(
+            push_items,
+            key=lambda i: (0 if i.kind == "Folder" else 1, i.depth, str(i.repo_path)),
+        )
+        push_cmd = [gcx_bin, "resources", "push"]
+        for item in sorted_pushes:
+            push_cmd.extend(["-p", str(item.repo_path)])
+        commands.append(push_cmd)
 
-    # 2. Push Dashboardów i AlertRules
-    resource_pushes = [i for i in push_items if i.kind != "Folder"]
-    if resource_pushes:
-        cmd = [gcx_bin, "resources", "push"]
-        for item in resource_pushes:
-            cmd.extend(["-p", str(item.repo_path)])
-        commands.append(cmd)
-
-    # 3. Delete usuniętych Dashboardów i AlertRules
+    # 2. Delete usuniętych Dashboardów i AlertRules
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:
         selectors = [f"{kind_to_plural[i.kind]}/{i.name}" for i in resource_destroys]

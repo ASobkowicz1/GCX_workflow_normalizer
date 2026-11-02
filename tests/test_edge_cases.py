@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from normalizer.cli import _format_command_header
+from normalizer.cli import _filter_gcx_output, _format_command_header
 from normalizer.models import FileKind, IssueSeverity, PlanActionType
 from normalizer.parser import detect_and_parse
 from normalizer.paths import slugify_filename
@@ -79,16 +79,22 @@ def test_user_renames_or_moves_folder(tmp_path: Path) -> None:
     # KROK 4: Bezpieczna kolejność wykonania w GCX
     cmds = build_gcx_delta_commands(plan, gcx_bin="./gcx")
     # 0) Pre-flight validate
-    # 1) Push folderu NewApp
-    # 2) Push dashboardu NewApp
-    # 3) Delete starego dashboardu
-    # 4) Delete starego folderu OldApp
-    assert len(cmds) == 5
+    # 1) Skonsolidowany push w porządku topologicznym: folder NewApp + dashboard NewApp
+    # 2) Delete starego dashboardu
+    # 3) Delete starego folderu OldApp
+    assert len(cmds) == 4
     assert cmds[0][:3] == ["./gcx", "resources", "validate"]
-    assert "data/PRD/NewApp/folder.yaml" in cmds[1]
-    assert "data/PRD/NewApp/d-app-metrics.yaml" in cmds[2]
-    assert cmds[3] == ["./gcx", "resources", "delete", f"dashboards/{old_dash_uid}", "-y"]
-    assert cmds[4] == ["./gcx", "resources", "delete", "folders/f-", "-y"] or "folders/" in cmds[4][3]
+    assert cmds[1] == [
+        "./gcx",
+        "resources",
+        "push",
+        "-p",
+        "data/PRD/NewApp/folder.yaml",
+        "-p",
+        "data/PRD/NewApp/d-app-metrics.yaml",
+    ]
+    assert cmds[2] == ["./gcx", "resources", "delete", f"dashboards/{old_dash_uid}", "-y"]
+    assert cmds[3] == ["./gcx", "resources", "delete", "folders/f-", "-y"] or "folders/" in cmds[3][3]
 
 
 def test_user_deletes_entire_nested_folder_tree(tmp_path: Path) -> None:
@@ -468,3 +474,87 @@ def test_format_command_header_clean_display() -> None:
     header_del = _format_command_header(cmd_delete, is_apply=True)
     assert "🚀 Deleting resources from Grafana:" in header_del
     assert "  • dashboards/d-12345" in header_del
+
+    # Filtrowanie szumów GCX dry-run
+    raw_gcx_out = (
+        "✔ No errors found.\n"
+        "⚠ recordingrules.rules.alerting.grafana.app does not support server-side dry-run. gcx checked client-side only...\n"
+        "⚠ alertrules.rules.alerting.grafana.app does not support server-side dry-run. gcx checked client-side only...\n"
+    )
+    cleaned = _filter_gcx_output(raw_gcx_out)
+    assert "does not support server-side dry-run" not in cleaned
+    assert "✔ No errors found." in cleaned
+
+
+def test_reconcile_and_plan_recording_rule(tmp_path: Path) -> None:
+    """
+    Sprawdza pełny cykl życia dla Grafana-managed RecordingRule:
+    1. Wrzucony surowy eksport RecordingRule z UI do folderu PRD/Metrics.
+    2. Normalizator tworzy kanoniczny plik `r-request-rate.yaml` oraz `folder.yaml`.
+    3. Plan wykrywa akcję CREATE dla RecordingRule.
+    4. Polecenie GCX push zawiera kanoniczny plik r-*.yaml.
+    """
+    repo = tmp_path / "repo"
+    data_dir = repo / "data"
+    metrics_dir = data_dir / "PRD" / "Metrics"
+    metrics_dir.mkdir(parents=True)
+
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+    (data_dir / "init.txt").write_text("initial", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial commit")
+
+    # Wrzucamy surowy eksport z UI
+    raw_rec = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": "raw-uid-12345",
+            "uid": "raw-uid-12345",
+            "resourceVersion": "1",
+            "annotations": {"grafana.app/folder": "old-folder"},
+        },
+        "spec": {
+            "title": "Request Rate",
+            "metric": "job:request_rate:5m",
+            "targetDatasourceUID": "prom-uid",
+            "trigger": {"interval": "1m"},
+            "expressions": {
+                "A": {
+                    "datasourceUID": "prom-uid",
+                    "model": {"expr": "rate(http[5m])"},
+                }
+            },
+        },
+    }
+    (metrics_dir / "raw_rec.yaml").write_text(yaml.safe_dump(raw_rec), encoding="utf-8")
+
+    res = reconcile_data_directory(data_dir)
+    assert not res.has_errors
+    assert not (metrics_dir / "raw_rec.yaml").exists()
+
+    canonical_rec = metrics_dir / "r-request-rate.yaml"
+    assert canonical_rec.exists()
+
+    rec_data = yaml.safe_load(canonical_rec.read_text(encoding="utf-8"))
+    assert rec_data["kind"] == "RecordingRule"
+    assert rec_data["metadata"]["name"].startswith("r-")
+    assert len(rec_data["metadata"]["name"]) == 22
+    assert "resourceVersion" not in rec_data["metadata"]
+
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Add recording rule")
+
+    # Sprawdzamy wyliczenie planu
+    plan = build_delta_plan(repo, data_subdir="data", base_ref="HEAD~1")
+    assert len(plan.to_add) == 3  # Folder PRD + Folder Metrics + RecordingRule Request Rate
+    rec_item = next(i for i in plan.to_add if i.kind == "RecordingRule")
+    assert rec_item.title == "Request Rate"
+    assert rec_item.action == PlanActionType.CREATE
+
+    cmds = build_gcx_delta_commands(plan, gcx_bin="./gcx")
+    # Pre-flight validate oraz skonsolidowany push
+    assert len(cmds) == 2
+    assert "data/PRD/Metrics/r-request-rate.yaml" in cmds[1]
