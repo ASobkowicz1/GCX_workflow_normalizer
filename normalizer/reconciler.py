@@ -68,10 +68,28 @@ def _expand_parsed_file_to_candidates(
             for rule in group.get("rules", []):
                 if not isinstance(rule, dict):
                     continue
-                is_rec = "record" in rule
-                rule_title = str(
-                    rule.get("record") if is_rec else rule.get("title", "")
-                ).strip()
+                is_rec = "record" in rule or "metric" in rule
+                rule_title = rule.get("title")
+                if not rule_title or not isinstance(rule_title, str):
+                    if is_rec:
+                        rec_val = (
+                            rule.get("record")
+                            if "record" in rule
+                            else rule.get("metric")
+                        )
+                        if isinstance(rec_val, dict):
+                            rule_title = (
+                                rec_val.get("metric")
+                                or rec_val.get("name")
+                                or "recording-rule"
+                            )
+                        elif isinstance(rec_val, str) and rec_val:
+                            rule_title = rec_val
+                        else:
+                            rule_title = "recording-rule"
+                    else:
+                        rule_title = "alert-rule"
+                rule_title = str(rule_title).strip()
                 if not rule_title:
                     issues.append(
                         ValidationIssue(

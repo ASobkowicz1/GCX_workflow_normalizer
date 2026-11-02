@@ -191,30 +191,35 @@ def normalize_recordingrule(
                 }
             expressions[ref_id] = expr_entry
 
-        rule_metric = rule.get("metric")
-        target_ds_rule = rule.get("targetDatasourceUid") or rule.get("targetDatasourceUID", "")
-        from_ref = None
-        if isinstance(rule_metric, dict):
-            metric_name = (
-                rule_metric.get("metric")
-                or rule_metric.get("name")
-                or rule.get("record")
-                or rule.get("title", "unnamed_metric")
-            )
-            target_ds_rule = (
-                target_ds_rule
-                or rule_metric.get("targetDatasourceUid")
-                or rule_metric.get("targetDatasourceUID")
-                or ""
-            )
-            from_ref = rule_metric.get("from")
-        elif isinstance(rule_metric, str) and rule_metric:
-            metric_name = rule_metric
-        else:
-            metric_name = rule.get("record") or rule.get("title", "unnamed_metric")
+        rec_obj = (
+            rule.get("record")
+            if isinstance(rule.get("record"), dict)
+            else (rule.get("metric") if isinstance(rule.get("metric"), dict) else {})
+        )
+        target_ds_rule = (
+            rule.get("targetDatasourceUid")
+            or rule.get("targetDatasourceUID")
+            or rec_obj.get("targetDatasourceUid")
+            or rec_obj.get("targetDatasourceUID")
+            or ""
+        )
+        from_ref = rec_obj.get("from") or rec_obj.get("refId")
+
+        metric_name = (
+            rec_obj.get("metric")
+            or rec_obj.get("name")
+            or (rule.get("record") if isinstance(rule.get("record"), str) else None)
+            or (rule.get("metric") if isinstance(rule.get("metric"), str) else None)
+            or (rule.get("title") if isinstance(rule.get("title"), str) else None)
+            or "recording-rule"
+        )
+        title = (
+            (rule.get("title") if isinstance(rule.get("title"), str) else None)
+            or metric_name
+        )
 
         spec = {
-            "title": rule.get("title") or metric_name,
+            "title": title,
             "metric": metric_name,
             "targetDatasourceUID": target_ds_rule,
             "expressions": expressions,

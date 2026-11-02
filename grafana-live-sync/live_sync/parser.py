@@ -99,20 +99,30 @@ def detect_and_parse(file_path: Path) -> ParsedFile:
         rules = groups[0].get("rules", []) if groups and isinstance(groups[0], dict) else []
         if rules and isinstance(rules[0], dict):
             first_rule = rules[0]
-            if "record" in first_rule or "metric" in first_rule:
-                rec_val = first_rule.get("record") or first_rule.get("metric")
-                if isinstance(rec_val, dict):
-                    title = rec_val.get("metric") or rec_val.get("name") or first_rule.get("title")
-                else:
-                    title = rec_val or first_rule.get("title")
-                return ParsedFile(
-                    path=file_path,
-                    kind=FileKind.RAW_UI_RECORDINGRULE,
-                    data=data,
-                    title=str(title) if title else None,
-                )
+            is_rec = "record" in first_rule or "metric" in first_rule
             title = first_rule.get("title")
-            return ParsedFile(path=file_path, kind=FileKind.RAW_UI_ALERTRULE, data=data, title=title)
+            if not title or not isinstance(title, str):
+                if is_rec:
+                    rec_val = (
+                        first_rule.get("record")
+                        if "record" in first_rule
+                        else first_rule.get("metric")
+                    )
+                    if isinstance(rec_val, dict):
+                        title = rec_val.get("metric") or rec_val.get("name") or "recording-rule"
+                    else:
+                        title = rec_val or "recording-rule"
+                else:
+                    title = "alert-rule"
+            rec_kind = (
+                FileKind.RAW_UI_RECORDINGRULE if is_rec else FileKind.RAW_UI_ALERTRULE
+            )
+            return ParsedFile(
+                path=file_path,
+                kind=rec_kind,
+                data=data,
+                title=str(title).strip() if title else None,
+            )
 
     return ParsedFile(
         path=file_path,

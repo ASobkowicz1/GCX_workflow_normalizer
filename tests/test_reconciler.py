@@ -179,3 +179,156 @@ def test_resource_directly_in_data_root_warns(tmp_path: Path) -> None:
     res = reconcile_data_directory(tmp_path)
     assert not res.has_errors
     assert any("outside any Grafana folder" in issue.message for issue in res.issues)
+
+
+def test_raw_ui_recording_rule_group_with_dict_metric_names_correctly(tmp_path: Path) -> None:
+    """
+    Sprawdza, czy eksport z UI z apiVersion: 1 gdzie pole `record` lub `metric` jest słownikiem:
+    - Za pierwszym razem tworzy czysty plik `r-recruletest.yaml` (a NIE `r-metric-recruletest-...yaml`).
+    - Za drugim razem jest w 100% idempotentny (zero zmian).
+    """
+    metrics_dir = tmp_path / "PRD" / "Metrics"
+    metrics_dir.mkdir(parents=True)
+
+    raw_rule_group = {
+        "apiVersion": 1,
+        "groups": [
+            {
+                "name": "1minute",
+                "interval": "1m",
+                "rules": [
+                    {
+                        "uid": "eg346hevv6m0wf",
+                        "title": "recruletest",
+                        "data": [
+                            {
+                                "refId": "A",
+                                "datasourceUid": "grafanacloud-play-prom",
+                                "model": {"expr": "rate(http[5m])"},
+                            }
+                        ],
+                        "record": {
+                            "metric": "recruletest",
+                            "from": "A",
+                            "targetDatasourceUid": "grafanacloud-prom",
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    (metrics_dir / "export.yaml").write_text(yaml.safe_dump(raw_rule_group), encoding="utf-8")
+
+    # 1. Pierwsze uruchomienie
+    res1 = reconcile_data_directory(tmp_path)
+    assert not res1.has_errors
+    assert not (metrics_dir / "export.yaml").exists()
+
+    canonical_file = metrics_dir / "r-recruletest.yaml"
+    assert canonical_file.exists(), "Plik powinien mieć czytelną nazwę r-recruletest.yaml już przy pierwszym przebiegu!"
+    # Upewniamy się, że nie powstał potworek ze stringified dictem
+    assert not (metrics_dir / "r-metric-recruletest-from-a-targetdatasourceuid-grafanacloud-prom.yaml").exists()
+
+    content = yaml.safe_load(canonical_file.read_text(encoding="utf-8"))
+    assert content["kind"] == "RecordingRule"
+    assert content["spec"]["title"] == "recruletest"
+    assert content["spec"]["metric"] == "recruletest"
+    assert content["spec"]["targetDatasourceUID"] == "grafanacloud-prom"
+    assert content["spec"]["expressions"]["A"]["source"] is True
+
+    # 2. Drugie uruchomienie (idempotentność)
+    res2 = reconcile_data_directory(tmp_path)
+    assert not res2.has_errors
+    assert res2.written_files == []
+    assert canonical_file.exists()
+
+
+def test_mixed_alert_and_recording_rules_group_export_split_into_individual_files(
+    tmp_path: Path,
+) -> None:
+    """
+    Sprawdza, czy eksport grupy zawierającej MIESZANE reguły (alert rules oraz recording rules)
+    zostaje prawidłowo rozbity na osobne kanoniczne pliki (a-*.yaml oraz r-*.yaml).
+    """
+    app_dir = tmp_path / "PRD" / "Applications"
+    app_dir.mkdir(parents=True)
+
+    mixed_group = {
+        "apiVersion": 1,
+        "groups": [
+            {
+                "name": "services_1m",
+                "interval": "1m",
+                "rules": [
+                    {
+                        "uid": "alert-1",
+                        "title": "High CPU Usage",
+                        "data": [{"refId": "A", "model": {"expr": "cpu > 80"}}],
+                        "for": "5m",
+                    },
+                    {
+                        "uid": "rec-1",
+                        "title": "request_rate_5m",
+                        "data": [
+                            {
+                                "refId": "A",
+                                "datasourceUid": "prom-ds",
+                                "model": {"expr": "rate(http[5m])"},
+                            }
+                        ],
+                        "record": {
+                            "metric": "request_rate_5m",
+                            "from": "A",
+                            "targetDatasourceUid": "prom-ds",
+                        },
+                    },
+                    {
+                        "uid": "rec-2",
+                        "title": "error_rate_5m",
+                        "data": [
+                            {
+                                "refId": "A",
+                                "datasourceUid": "prom-ds",
+                                "model": {"expr": "rate(http_errors[5m])"},
+                            }
+                        ],
+                        "record": {
+                            "metric": "error_rate_5m",
+                            "from": "A",
+                            "targetDatasourceUid": "prom-ds",
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    (app_dir / "mixed_export.yaml").write_text(yaml.safe_dump(mixed_group), encoding="utf-8")
+
+    res = reconcile_data_directory(tmp_path)
+    assert not res.has_errors
+    # Surowy plik grupy został usunięty
+    assert not (app_dir / "mixed_export.yaml").exists()
+
+    # Sprawdzamy wygenerowane pliki kanoniczne
+    alert_file = app_dir / "a-high-cpu-usage.yaml"
+    rec1_file = app_dir / "r-request-rate-5m.yaml"
+    rec2_file = app_dir / "r-error-rate-5m.yaml"
+
+    assert alert_file.exists()
+    assert rec1_file.exists()
+    assert rec2_file.exists()
+
+    # Weryfikacja rodzajów i prefiksów UID
+    alert_data = yaml.safe_load(alert_file.read_text(encoding="utf-8"))
+    assert alert_data["kind"] == "AlertRule"
+    assert alert_data["metadata"]["name"].startswith("a-")
+
+    rec1_data = yaml.safe_load(rec1_file.read_text(encoding="utf-8"))
+    assert rec1_data["kind"] == "RecordingRule"
+    assert rec1_data["metadata"]["name"].startswith("r-")
+    assert rec1_data["spec"]["metric"] == "request_rate_5m"
+
+    rec2_data = yaml.safe_load(rec2_file.read_text(encoding="utf-8"))
+    assert rec2_data["kind"] == "RecordingRule"
+    assert rec2_data["metadata"]["name"].startswith("r-")
+    assert rec2_data["spec"]["metric"] == "error_rate_5m"
