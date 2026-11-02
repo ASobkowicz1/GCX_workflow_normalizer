@@ -543,6 +543,9 @@ def test_reconcile_and_plan_recording_rule(tmp_path: Path) -> None:
     assert rec_data["metadata"]["name"].startswith("r-")
     assert len(rec_data["metadata"]["name"]) == 22
     assert "resourceVersion" not in rec_data["metadata"]
+    assert rec_data["spec"]["metric"] == "job:request_rate:5m"
+    assert rec_data["spec"]["targetDatasourceUID"] == "prom-uid"
+    assert rec_data["spec"]["expressions"]["A"]["source"] is True
 
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "Add recording rule")

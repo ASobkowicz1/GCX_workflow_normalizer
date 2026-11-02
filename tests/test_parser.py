@@ -111,3 +111,44 @@ def test_detect_canonical_alertrule(tmp_path: Path) -> None:
     parsed = detect_and_parse(alert_file)
     assert parsed.kind == FileKind.CANONICAL_ALERTRULE
     assert parsed.title == "Usage alert"
+
+
+def test_detect_canonical_and_raw_recordingrule(tmp_path: Path) -> None:
+    canonical_file = tmp_path / "r-recruletest.yaml"
+    manifest = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": "r-1234567890abcdef1234",
+            "annotations": {"grafana.app/folder": "f-abcdef1234567890abcd"},
+        },
+        "spec": {
+            "title": "recruletest",
+            "metric": "recruletest",
+            "targetDatasourceUID": "grafanacloud-prom",
+            "expressions": {"A": {}},
+        },
+    }
+    canonical_file.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    parsed = detect_and_parse(canonical_file)
+    assert parsed.kind == FileKind.CANONICAL_RECORDINGRULE
+    assert parsed.title == "recruletest"
+
+    # Jeśli spec.metric jest dictem lub brak targetDatasourceUID, plik nie jest kanoniczny (wymaga normalizacji)
+    raw_file = tmp_path / "r-with-dict-metric.yaml"
+    raw_manifest = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": "r-1234567890abcdef1234",
+            "annotations": {"grafana.app/folder": "f-abcdef1234567890abcd"},
+        },
+        "spec": {
+            "title": "recruletest",
+            "metric": {"metric": "recruletest", "from": "A"},
+            "targetDatasourceUID": "",
+        },
+    }
+    raw_file.write_text(yaml.safe_dump(raw_manifest), encoding="utf-8")
+    parsed_raw = detect_and_parse(raw_file)
+    assert parsed_raw.kind == FileKind.RAW_UI_RECORDINGRULE

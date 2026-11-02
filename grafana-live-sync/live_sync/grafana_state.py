@@ -195,12 +195,28 @@ def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
                 norm_exprs[str(ref_id)] = entry
 
         trigger = cleaned.get("trigger") if isinstance(cleaned.get("trigger"), dict) else {}
+        raw_metric = cleaned.get("metric")
+        if isinstance(raw_metric, dict):
+            metric_str = str(raw_metric.get("metric") or raw_metric.get("name") or "").strip()
+            target_ds_val = str(
+                cleaned.get("targetDatasourceUID")
+                or cleaned.get("target_datasource_uid")
+                or raw_metric.get("targetDatasourceUid")
+                or raw_metric.get("targetDatasourceUID")
+                or ""
+            ).strip()
+        else:
+            metric_str = str(raw_metric or "").strip()
+            target_ds_val = str(
+                cleaned.get("targetDatasourceUID")
+                or cleaned.get("target_datasource_uid")
+                or ""
+            ).strip()
+
         return {
             "title": str(cleaned.get("title", "")).strip(),
-            "metric": str(cleaned.get("metric", "")).strip(),
-            "targetDatasourceUID": str(
-                cleaned.get("targetDatasourceUID") or cleaned.get("target_datasource_uid", "")
-            ).strip(),
+            "metric": metric_str,
+            "targetDatasourceUID": target_ds_val,
             "paused": bool(cleaned.get("paused", False)),
             "trigger_interval": _normalize_duration(trigger.get("interval", "1m")),
             "expressions": norm_exprs,

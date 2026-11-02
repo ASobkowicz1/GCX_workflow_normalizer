@@ -103,6 +103,41 @@ def test_canonicalize_spec_go_durations_and_server_defaults() -> None:
     assert canon_git == canon_api  # Pełna zgodność semantyczna, zero fałszywego driftu!
 
 
+def test_canonicalize_spec_recording_rule() -> None:
+    """Sprawdza ujednolicanie specyfikacji dla RecordingRule (czasy trwania i domyślne parametry)."""
+    spec_git = {
+        "title": "recruletest",
+        "metric": "recruletest",
+        "targetDatasourceUID": "grafanacloud-prom",
+        "trigger": {"interval": "1m"},
+        "expressions": {
+            "A": {
+                "datasourceUID": "grafanacloud-play-prom",
+                "model": {"expr": "avg(alloy)"},
+                "relativeTimeRange": {"from": "600s", "to": "0s"},
+                "source": True,
+            }
+        },
+    }
+    spec_api = {
+        "title": "recruletest",
+        "metric": "recruletest",
+        "targetDatasourceUID": "grafanacloud-prom",
+        "trigger": {"interval": "60s"},
+        "expressions": {
+            "A": {
+                "datasourceUID": "grafanacloud-play-prom",
+                "model": {"expr": "avg(alloy)"},
+                "relativeTimeRange": {"from": "10m0s", "to": "0s"},
+                "source": True,
+            }
+        },
+    }
+    canon_git = canonicalize_spec("RecordingRule", spec_git)
+    canon_api = canonicalize_spec("RecordingRule", spec_api)
+    assert canon_git == canon_api
+
+
 def test_live_sync_plan_create_when_missing_in_grafana(tmp_path: Path) -> None:
     """
     Zasób istnieje w repozytorium (grafana/), ale brak go w Grafana Cloud.

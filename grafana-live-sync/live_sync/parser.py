@@ -70,10 +70,26 @@ def detect_and_parse(file_path: Path) -> ParsedFile:
 
     # 4. Rozpoznanie RecordingRule (format k8s v0alpha1 / v1beta1)
     if api_version.startswith("rules.alerting.grafana.app/") and kind == "RecordingRule":
-        title = data.get("spec", {}).get("title") or data.get("spec", {}).get("metric")
+        spec = data.get("spec") if isinstance(data.get("spec"), dict) else {}
+        metric_val = spec.get("metric")
+        title = spec.get("title")
+        if not title or not isinstance(title, str):
+            if isinstance(metric_val, str):
+                title = metric_val
+            elif isinstance(metric_val, dict):
+                title = metric_val.get("metric") or metric_val.get("name") or "recording-rule"
+            else:
+                title = "recording-rule"
+
+        is_canonical = (
+            is_canonical_uid("r")
+            and isinstance(metric_val, str)
+            and bool(metric_val.strip())
+            and bool(spec.get("targetDatasourceUID"))
+        )
         rec_kind = (
             FileKind.CANONICAL_RECORDINGRULE
-            if is_canonical_uid("r")
+            if is_canonical
             else FileKind.RAW_UI_RECORDINGRULE
         )
         return ParsedFile(path=file_path, kind=rec_kind, data=data, title=title)
@@ -83,13 +99,17 @@ def detect_and_parse(file_path: Path) -> ParsedFile:
         rules = groups[0].get("rules", []) if groups and isinstance(groups[0], dict) else []
         if rules and isinstance(rules[0], dict):
             first_rule = rules[0]
-            if "record" in first_rule:
-                title = first_rule.get("record") or first_rule.get("title")
+            if "record" in first_rule or "metric" in first_rule:
+                rec_val = first_rule.get("record") or first_rule.get("metric")
+                if isinstance(rec_val, dict):
+                    title = rec_val.get("metric") or rec_val.get("name") or first_rule.get("title")
+                else:
+                    title = rec_val or first_rule.get("title")
                 return ParsedFile(
                     path=file_path,
                     kind=FileKind.RAW_UI_RECORDINGRULE,
                     data=data,
-                    title=title,
+                    title=str(title) if title else None,
                 )
             title = first_rule.get("title")
             return ParsedFile(path=file_path, kind=FileKind.RAW_UI_ALERTRULE, data=data, title=title)

@@ -209,5 +209,55 @@ def test_normalize_recordingrule_k8s_and_raw(tmp_path: Path) -> None:
     assert res["spec"]["title"] == "recruletest"
     assert res["spec"]["metric"] == "recruletest"
     assert res["spec"]["targetDatasourceUID"] == "grafanacloud-prom"
+    assert res["spec"]["expressions"]["A"]["source"] is True
     assert "uid" not in res["metadata"]
     assert "resourceVersion" not in res["metadata"]
+
+
+def test_normalize_recordingrule_nested_metric_dict(tmp_path: Path) -> None:
+    """Sprawdza normalizację reguły RecordingRule ze słownikiem `metric` w `spec` (format eksportu z UI)."""
+    raw_ui = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": "raw-recording-rule",
+            "uid": "raw-recording-rule",
+            "resourceVersion": "2",
+        },
+        "spec": {
+            "title": "recruletest",
+            "metric": {
+                "metric": "recruletest",
+                "from": "A",
+                "targetDatasourceUid": "grafanacloud-prom",
+            },
+            "expressions": {
+                "A": {
+                    "datasourceUID": "grafanacloud-play-prom",
+                    "model": {"expr": "rate(http_requests[5m])"},
+                }
+            },
+            "trigger": {"interval": "1m"},
+        },
+    }
+    file_path = tmp_path / "raw-recrule-dict.yaml"
+    import yaml
+
+    file_path.write_text(yaml.safe_dump(raw_ui), encoding="utf-8")
+    parsed = detect_and_parse(file_path)
+    assert parsed.kind == FileKind.RAW_UI_RECORDINGRULE
+
+    res = normalize_recordingrule(
+        parsed,
+        folder_uid="f-11111111111111111111",
+        recordingrule_uid="r-22222222222222222222",
+    )
+    assert res["apiVersion"] == CANONICAL_ALERT_API_VERSION
+    assert res["kind"] == "RecordingRule"
+    assert res["metadata"]["name"] == "r-22222222222222222222"
+    assert res["metadata"]["annotations"] == {"grafana.app/folder": "f-11111111111111111111"}
+    assert res["spec"]["title"] == "recruletest"
+    assert res["spec"]["metric"] == "recruletest"
+    assert isinstance(res["spec"]["metric"], str)
+    assert res["spec"]["targetDatasourceUID"] == "grafanacloud-prom"
+    assert res["spec"]["expressions"]["A"]["source"] is True

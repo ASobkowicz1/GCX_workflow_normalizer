@@ -177,17 +177,37 @@ def normalize_recordingrule(
                 }
             expressions[ref_id] = expr_entry
 
-        metric_name = (
-            rule.get("record") or rule.get("metric") or rule.get("title", "unnamed_metric")
-        )
+        rule_metric = rule.get("metric")
+        target_ds_rule = rule.get("targetDatasourceUid") or rule.get("targetDatasourceUID", "")
+        from_ref = None
+        if isinstance(rule_metric, dict):
+            metric_name = (
+                rule_metric.get("metric")
+                or rule_metric.get("name")
+                or rule.get("record")
+                or rule.get("title", "unnamed_metric")
+            )
+            target_ds_rule = (
+                target_ds_rule
+                or rule_metric.get("targetDatasourceUid")
+                or rule_metric.get("targetDatasourceUID")
+                or ""
+            )
+            from_ref = rule_metric.get("from")
+        elif isinstance(rule_metric, str) and rule_metric:
+            metric_name = rule_metric
+        else:
+            metric_name = rule.get("record") or rule.get("title", "unnamed_metric")
+
         spec = {
             "title": rule.get("title") or metric_name,
             "metric": metric_name,
-            "targetDatasourceUID": rule.get("targetDatasourceUid")
-            or rule.get("targetDatasourceUID", ""),
+            "targetDatasourceUID": target_ds_rule,
             "expressions": expressions,
             "trigger": {"interval": interval},
         }
+        if from_ref:
+            spec["from"] = from_ref
         if rule.get("labels"):
             spec["labels"] = rule["labels"]
         if rule.get("paused") or rule.get("isPaused"):
@@ -195,13 +215,66 @@ def normalize_recordingrule(
     else:
         raise ValueError("unsupported recording rule format")
 
+    raw_metric = spec.get("metric")
+    metric_name = ""
+    target_ds = (
+        spec.get("targetDatasourceUID")
+        or spec.get("target_datasource_uid")
+        or spec.get("targetDatasourceUid")
+        or ""
+    )
+    from_ref = spec.get("from")
+
+    if isinstance(raw_metric, dict):
+        metric_name = (
+            raw_metric.get("metric")
+            or raw_metric.get("name")
+            or str(spec.get("title", "recording-rule"))
+        )
+        if not target_ds:
+            target_ds = (
+                raw_metric.get("targetDatasourceUid")
+                or raw_metric.get("targetDatasourceUID")
+                or raw_metric.get("target_datasource_uid")
+                or ""
+            )
+        if not from_ref:
+            from_ref = raw_metric.get("from") or raw_metric.get("refId")
+    elif isinstance(raw_metric, str) and raw_metric:
+        metric_name = raw_metric
+    elif spec.get("title"):
+        metric_name = str(spec.get("title"))
+    else:
+        metric_name = "recording-rule"
+
+    expressions = spec.get("expressions", {})
+    if isinstance(expressions, dict):
+        if from_ref and from_ref in expressions and isinstance(expressions[from_ref], dict):
+            expressions[from_ref]["source"] = True
+        elif not any(
+            isinstance(expr, dict) and expr.get("source") is True
+            for expr in expressions.values()
+        ) and len(expressions) == 1:
+            only_expr = next(iter(expressions.values()))
+            if isinstance(only_expr, dict):
+                only_expr["source"] = True
+
+    title = spec.get("title")
+    if not title or not isinstance(title, str):
+        title = metric_name
+
+    trigger = spec.get("trigger")
+    if not isinstance(trigger, dict):
+        trigger = {"interval": "1m"}
+    elif "interval" not in trigger:
+        trigger["interval"] = "1m"
+
     cleaned_spec: dict[str, Any] = {
-        "title": spec.get("title") or spec.get("metric", "recording-rule"),
-        "metric": spec.get("metric") or spec.get("title", "metric"),
-        "targetDatasourceUID": spec.get("targetDatasourceUID")
-        or spec.get("target_datasource_uid", ""),
-        "expressions": spec.get("expressions", {}),
-        "trigger": spec.get("trigger", {"interval": "1m"}),
+        "title": title,
+        "metric": metric_name,
+        "targetDatasourceUID": target_ds,
+        "expressions": expressions,
+        "trigger": trigger,
     }
     if spec.get("labels"):
         cleaned_spec["labels"] = spec["labels"]
