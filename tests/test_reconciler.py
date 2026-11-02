@@ -332,3 +332,67 @@ def test_mixed_alert_and_recording_rules_group_export_split_into_individual_file
     assert rec2_data["kind"] == "RecordingRule"
     assert rec2_data["metadata"]["name"].startswith("r-")
     assert rec2_data["spec"]["metric"] == "error_rate_5m"
+
+
+def test_reconcile_migrates_alert_and_recording_rules_to_new_api_version(tmp_path: Path) -> None:
+    """Sprawdza, czy po zmianie CANONICAL_ALERT_API_VERSION istniejące kanoniczne pliki v0alpha1 są aktualizowane do v1beta1."""
+    from unittest.mock import patch
+    from normalizer.paths import generate_uid
+
+    folder = tmp_path / "PRD - Applications"
+    folder.mkdir()
+
+    expected_alert_uid = generate_uid("a", "PRD - Applications", "CPU Alert")
+    expected_rec_uid = generate_uid("r", "PRD - Applications", "cpu_metric")
+
+    alert_path = folder / "a-cpu-alert.yaml"
+    alert_manifest = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "AlertRule",
+        "metadata": {
+            "name": expected_alert_uid,
+            "annotations": {"grafana.app/folder": "f-22222222222222222222"},
+        },
+        "spec": {
+            "title": "CPU Alert",
+            "trigger": {"interval": "1m"},
+            "expressions": {"A": {"source": True}},
+        },
+    }
+    alert_path.write_text(yaml.safe_dump(alert_manifest), encoding="utf-8")
+
+    rec_path = folder / "r-cpu-metric.yaml"
+    rec_manifest = {
+        "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+        "kind": "RecordingRule",
+        "metadata": {
+            "name": expected_rec_uid,
+            "annotations": {"grafana.app/folder": "f-22222222222222222222"},
+        },
+        "spec": {
+            "title": "cpu_metric",
+            "metric": "cpu_metric",
+            "targetDatasourceUID": "prom-ds",
+            "expressions": {"A": {"source": True}},
+            "trigger": {"interval": "1m"},
+        },
+    }
+    rec_path.write_text(yaml.safe_dump(rec_manifest), encoding="utf-8")
+
+    # Symulujemy zmianę wersji kanonicznej na v1beta1
+    with patch("normalizer.transformer.CANONICAL_ALERT_API_VERSION", "rules.alerting.grafana.app/v1beta1"):
+        res = reconcile_data_directory(tmp_path)
+
+    assert not res.has_errors
+    assert alert_path in res.written_files
+    assert rec_path in res.written_files
+
+    # Weryfikacja zaktualizowanych plików na dysku
+    updated_alert = yaml.safe_load(alert_path.read_text(encoding="utf-8"))
+    assert updated_alert["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
+    assert updated_alert["metadata"]["name"] == expected_alert_uid
+
+    updated_rec = yaml.safe_load(rec_path.read_text(encoding="utf-8"))
+    assert updated_rec["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
+    assert updated_rec["metadata"]["name"] == expected_rec_uid
+

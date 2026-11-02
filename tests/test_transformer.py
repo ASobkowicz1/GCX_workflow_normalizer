@@ -92,7 +92,7 @@ def test_normalize_alertrule_from_example_repo() -> None:
         alert_uid="a-dddddddddddddddddddd",
     )
 
-    assert result["apiVersion"] == "rules.alerting.grafana.app/v0alpha1"
+    assert result["apiVersion"] == CANONICAL_ALERT_API_VERSION
     assert result["kind"] == "AlertRule"
     assert result["metadata"] == {
         "name": "a-dddddddddddddddddddd",

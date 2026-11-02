@@ -140,7 +140,10 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
         raise ValueError("unsupported alert rule format")
 
     if "notificationSettings" in spec and isinstance(spec["notificationSettings"], dict):
-        if "receiver" in spec["notificationSettings"] and "type" not in spec["notificationSettings"]:
+        if (
+            "receiver" in spec["notificationSettings"]
+            and "type" not in spec["notificationSettings"]
+        ):
             spec["notificationSettings"]["type"] = "SimplifiedRouting"
 
     return {
@@ -213,10 +216,7 @@ def normalize_recordingrule(
             or (rule.get("title") if isinstance(rule.get("title"), str) else None)
             or "recording-rule"
         )
-        title = (
-            (rule.get("title") if isinstance(rule.get("title"), str) else None)
-            or metric_name
-        )
+        title = (rule.get("title") if isinstance(rule.get("title"), str) else None) or metric_name
 
         spec = {
             "title": title,
@@ -270,10 +270,13 @@ def normalize_recordingrule(
     if isinstance(expressions, dict):
         if from_ref and from_ref in expressions and isinstance(expressions[from_ref], dict):
             expressions[from_ref]["source"] = True
-        elif not any(
-            isinstance(expr, dict) and expr.get("source") is True
-            for expr in expressions.values()
-        ) and len(expressions) == 1:
+        elif (
+            not any(
+                isinstance(expr, dict) and expr.get("source") is True
+                for expr in expressions.values()
+            )
+            and len(expressions) == 1
+        ):
             only_expr = next(iter(expressions.values()))
             if isinstance(only_expr, dict):
                 only_expr["source"] = True
