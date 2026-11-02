@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -98,15 +99,96 @@ def _format_command_header(
     return f"{prefix}: {' '.join(cmd_display)}"
 
 
+def _extract_error_detail(stdout: str, stderr: str, default_code: int) -> str:
+    """Wyciąga najbardziej czytelną informację o przyczynie błędu z wyjścia GCX."""
+    combined = f"{stderr}\n{stdout}"
+    reasons: list[str] = []
+    for raw_line in combined.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "Auto-approval enabled" in line or "does not support server-side dry-run" in line:
+            continue
+        # Filtrujemy linie-liczniki GCX (np. "warn: 2 resource(s) failed to delete", "✘ 0 resources deleted, 2 errors")
+        if re.search(r"^warn:\s*\d+\s*resource\(s\)\s*failed", line, re.IGNORECASE):
+            continue
+        if re.search(
+            r"^[✘✔⚠❌]\s*\d+\s*resources?\s*(deleted|pushed|created|errors?)",
+            line,
+            re.IGNORECASE,
+        ):
+            continue
+        if line.startswith(("❌", "⚠", "✔", "✘")):
+            continue
+        lower = line.lower()
+        if any(
+            kw in lower
+            for kw in (
+                "error",
+                "invalid",
+                "failed",
+                "rejected",
+                "cannot",
+                "unknown",
+                "denied",
+                "conflict",
+                "required",
+                "bad request",
+                "unprocessable",
+            )
+        ):
+            reasons.append(line)
+
+    if reasons:
+        seen = set()
+        unique = [r for r in reasons if not (r in seen or seen.add(r))]
+        return "; ".join(unique[:3])
+
+    if default_code == 4:
+        return "Rejected by Grafana API (exit code 4: Schema/field validation error or parent folder restriction)"
+    return f"Failed with exit code {default_code}"
+
+
+def _diagnose_batch_failure(
+    cmd: list[str],
+    repo_root: Path,
+    data_dir: str = "",
+) -> list[tuple[str, str]]:
+    """
+    Uruchamia precyzyjną diagnostykę per-plik, gdy skonsolidowane polecenie (validate lub push) zawiedzie.
+    Bada każdy plik z paczki z osobna i zbiera pełną listę wszystkich uszkodzonych zasobów naraz.
+    """
+    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    gcx_bin = cmd[0]
+    action = "push" if "push" in cmd else "validate"
+    files = [cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i] == "-p"]
+
+    failures: list[tuple[str, str]] = []
+    for f in files:
+        single_cmd = [gcx_bin, "resources", action, "-p", f]
+        proc = subprocess.run(single_cmd, cwd=repo_root, capture_output=True, text=True)
+        if proc.returncode != 0:
+            detail = _extract_error_detail(proc.stdout, proc.stderr, proc.returncode)
+            display_path = f.removeprefix(data_prefix)
+            failures.append((display_path, detail))
+    return failures
+
+
 def _execute_commands(
     commands: list[list[str]],
     repo_root: Path,
     is_apply: bool = False,
     data_dir: str = "",
 ) -> int:
-    """Uruchamia kolejne polecenia GCX i przerywa wykonanie w razie błędu."""
-    for cmd in commands:
-        is_delete_step = "delete" in cmd
+    """
+    Uruchamia kolejne polecenia GCX z podziałem na skonsolidowane fazy (Validate, Push, Delete)
+    oraz automatyczną zbiorczą diagnostyką wszystkich błędnych zasobów w przypadku niepowodzenia.
+    """
+    non_delete_cmds = [cmd for cmd in commands if "delete" not in cmd]
+    delete_cmds = [cmd for cmd in commands if "delete" in cmd]
+
+    # KROK 1: Wykonanie fazy Validate oraz Push
+    for cmd in non_delete_cmds:
         print(f"\n{_format_command_header(cmd, is_apply, data_dir=data_dir)}")
         proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
         if proc.stdout:
@@ -117,20 +199,119 @@ def _execute_commands(
             cleaned_err = _filter_gcx_output(proc.stderr)
             if cleaned_err.strip():
                 print(cleaned_err, file=sys.stderr)
+
         if proc.returncode != 0:
-            combined_out = f"{proc.stdout}\n{proc.stderr}".lower()
-            if is_delete_step and ("not found" in combined_out or "404" in combined_out):
+            # Uruchamiamy automatyczną zbiorczą diagnostykę wszystkich plików w paczce
+            diag_failures = _diagnose_batch_failure(cmd, repo_root, data_dir=data_dir)
+            if diag_failures:
+                action_name = "Deployment" if "push" in cmd else "Validation"
                 print(
-                    "⚠️ Resource to delete was already absent in Grafana (404 Not Found) – continuing safely."
+                    f"\n❌ {action_name} failed – {len(diag_failures)} resource(s) rejected by Grafana API:"
                 )
-                continue
-            if is_delete_step and proc.returncode == 4 and any("folders/" in arg for arg in cmd):
-                print(
-                    "⚠️ Folder could not be deleted in Grafana (exit code 4): it still contains active resources or child folders in Grafana.",
-                    file=sys.stderr,
-                )
+                for f_name, reason in diag_failures:
+                    print(f"  • {f_name}\n    Error: {reason}")
+            else:
+                detail = _extract_error_detail(proc.stdout, proc.stderr, proc.returncode)
+                print(f"\n❌ Command failed: {detail}")
+
             print(f"❌ Command failed with exit code {proc.returncode}")
             return proc.returncode
+
+    # KROK 2: Wykonanie skonsolidowanej fazy Delete
+    if delete_cmds:
+        gcx_bin = delete_cmds[0][0]
+        all_selectors: list[str] = []
+        for cmd in delete_cmds:
+            for arg in cmd[1:]:
+                if not arg.startswith("-") and arg not in ("resources", "delete"):
+                    all_selectors.append(arg)
+
+        lines = ["\n🚀 Deleting resources from Grafana:"]
+        for s in all_selectors:
+            lines.append(f"  • {s}")
+        print("\n".join(lines))
+
+        total_deleted = 0
+        total_already_absent = 0
+        delete_failures: list[tuple[str, str]] = []
+
+        for cmd in delete_cmds:
+            cmd_selectors = [
+                arg
+                for arg in cmd[1:]
+                if not arg.startswith("-") and arg not in ("resources", "delete")
+            ]
+            proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+            combined_out = f"{proc.stdout}\n{proc.stderr}".lower()
+
+            if proc.returncode != 0:
+                is_absent_in_output = any(
+                    kw in combined_out
+                    for kw in ("not found", "404", "does not exist", "notfound", "cannot find")
+                )
+
+                for s in cmd_selectors:
+                    if is_absent_in_output:
+                        total_already_absent += 1
+                        continue
+
+                    # Jeśli GCX zwrócił ogólny błąd bez treści (kod 4), sprawdzamy czy zasób w ogóle istnieje w Grafanie
+                    parts = s.split("/", 1)
+                    if len(parts) == 2:
+                        chk_cmd = [gcx_bin, "resources", "get", parts[0], parts[1]]
+                        chk_proc = subprocess.run(
+                            chk_cmd, cwd=repo_root, capture_output=True, text=True
+                        )
+                        chk_out = f"{chk_proc.stdout}\n{chk_proc.stderr}".lower()
+                        if chk_proc.returncode != 0 or any(
+                            kw in chk_out
+                            for kw in ("not found", "404", "does not exist", "notfound")
+                        ):
+                            # Zasób nie istnieje w Grafanie – sukces idempotencji!
+                            total_already_absent += 1
+                            continue
+
+                        # Zasób istnieje w Grafanie: ponawiamy usunięcie indywidualne
+                        retry_cmd = [gcx_bin, "resources", "delete", s, "-y"]
+                        retry_proc = subprocess.run(
+                            retry_cmd, cwd=repo_root, capture_output=True, text=True
+                        )
+                        if retry_proc.returncode == 0:
+                            total_deleted += 1
+                            continue
+
+                        if retry_proc.returncode == 4 and "folders/" in s:
+                            msg = "Folder could not be deleted (exit code 4): it still contains active resources or child folders in Grafana."
+                        else:
+                            msg = _extract_error_detail(
+                                retry_proc.stdout, retry_proc.stderr, retry_proc.returncode
+                            )
+                        delete_failures.append((s, msg))
+                    else:
+                        msg = _extract_error_detail(proc.stdout, proc.stderr, proc.returncode)
+                        delete_failures.append((s, msg))
+            else:
+                total_deleted += len(cmd_selectors)
+
+        if delete_failures:
+            print(
+                f"\n❌ Deletion failed – {len(delete_failures)} resource(s) could not be deleted:"
+            )
+            for sel, reason in delete_failures:
+                print(f"  • {sel}\n    Error: {reason}")
+            print("❌ Command failed with exit code 4")
+            return 4
+
+        summary_parts: list[str] = []
+        if total_deleted > 0:
+            summary_parts.append(f"{total_deleted} resources deleted")
+        if total_already_absent > 0:
+            summary_parts.append(f"{total_already_absent} already absent")
+        if not summary_parts:
+            summary_parts.append("0 resources deleted")
+
+        print(f"✔ {', '.join(summary_parts)} in Grafana, 0 errors")
+
     return 0
 
 

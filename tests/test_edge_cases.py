@@ -6,7 +6,15 @@ from pathlib import Path
 
 import yaml
 
-from normalizer.cli import _filter_gcx_output, _format_command_header
+from unittest.mock import MagicMock, patch
+
+from normalizer.cli import (
+    _diagnose_batch_failure,
+    _execute_commands,
+    _extract_error_detail,
+    _filter_gcx_output,
+    _format_command_header,
+)
 from normalizer.models import FileKind, IssueSeverity, PlanActionType
 from normalizer.parser import detect_and_parse
 from normalizer.paths import slugify_filename
@@ -561,3 +569,156 @@ def test_reconcile_and_plan_recording_rule(tmp_path: Path) -> None:
     # Pre-flight validate oraz skonsolidowany push
     assert len(cmds) == 2
     assert "data/PRD/Metrics/r-request-rate.yaml" in cmds[1]
+
+
+def test_extract_error_detail_various_cases() -> None:
+    """Sprawdza wyciąganie czytelnych szczegółów błędu z wyjścia GCX."""
+    # 1. Błąd walidacji ze specyficznym komunikatem
+    stderr_val = "warn: 1 resource(s) failed to push\nerror: spec.targetDatasourceUID cannot be empty"
+    msg = _extract_error_detail("", stderr_val, default_code=4)
+    assert "spec.targetDatasourceUID cannot be empty" in msg
+
+    # 2. Błąd z kodem 4 bez szczegółów tekstowych
+    msg_generic = _extract_error_detail("", "warn: 1 resource(s) failed to push", default_code=4)
+    assert "exit code 4" in msg_generic
+    assert "Schema/field validation error" in msg_generic
+
+    # 3. Ignorowanie szumów dry-run i auto-approval
+    stderr_noise = (
+        "Auto-approval enabled: automatically setting --force\n"
+        "does not support server-side dry-run\n"
+        "invalid datasource UID 'prom-fake'\n"
+    )
+    msg_clean = _extract_error_detail("", stderr_noise, default_code=1)
+    assert "invalid datasource UID 'prom-fake'" in msg_clean
+    assert "Auto-approval" not in msg_clean
+
+
+def test_batch_auto_diagnostics_reports_all_failures(capsys) -> None:
+    """
+    Sprawdza, czy w przypadku błędu partii silnik bada wszystkie pliki z paczki
+    i raportuje WSZYSTKIE uszkodzone zasoby naraz (a nie tylko pierwszy).
+    """
+    cmd = [
+        "gcx",
+        "resources",
+        "push",
+        "-p",
+        "data/PRD/folder.yaml",
+        "-p",
+        "data/PRD/a-broken1.yaml",
+        "-p",
+        "data/PRD/a-broken2.yaml",
+    ]
+
+    # Symulacja subprocess:
+    # 1. Batch call -> zwraca błąd ogólny (kod 4)
+    # 2. Diag dla folder.yaml -> sukces (kod 0)
+    # 3. Diag dla a-broken1.yaml -> błąd (kod 4, brak targetDatasourceUID)
+    # 4. Diag dla a-broken2.yaml -> błąd (kod 4, nieprawidłowe query)
+    batch_res = MagicMock(returncode=4, stdout="", stderr="warn: 2 resource(s) failed to push")
+    diag_f1 = MagicMock(returncode=0, stdout="✔ pushed", stderr="")
+    diag_f2 = MagicMock(returncode=4, stdout="", stderr="error: targetDatasourceUID cannot be empty")
+    diag_f3 = MagicMock(returncode=4, stdout="", stderr="error: invalid promql query")
+
+    with patch("subprocess.run", side_effect=[batch_res, diag_f1, diag_f2, diag_f3]):
+        exit_code = _execute_commands([cmd], repo_root=Path("/fake"), is_apply=True, data_dir="data")
+
+    assert exit_code == 4
+    captured = capsys.readouterr()
+    # Weryfikacja: oba uszkodzone zasoby są wylistowane w jednym raporcie
+    assert "Deployment failed – 2 resource(s) rejected by Grafana API:" in captured.out
+    assert "PRD/a-broken1.yaml" in captured.out
+    assert "targetDatasourceUID cannot be empty" in captured.out
+    assert "PRD/a-broken2.yaml" in captured.out
+    assert "invalid promql query" in captured.out
+    # Plik poprawny nie może znaleźć się na liście odrzuconych
+    assert "PRD/folder.yaml" not in captured.out.split("Deployment failed")[1]
+
+
+def test_consolidated_delete_execution_and_404_handling(capsys) -> None:
+    """
+    Sprawdza, czy seria poleceń delete jest prezentowana jako jeden skonsolidowany blok
+    oraz czy błędy 404 (zasób już usunięty) są bezpiecznie ignorowane.
+    """
+    cmds = [
+        ["gcx", "resources", "delete", "alertrules/a-1", "-y"],
+        ["gcx", "resources", "delete", "folders/f-child", "-y"],
+        ["gcx", "resources", "delete", "folders/f-parent", "-y"],
+    ]
+
+    # Symulacja:
+    # 1. alertrules/a-1 -> usunięty (kod 0)
+    # 2. folders/f-child -> 404 Not Found (zasób już nie istnieje)
+    # 3. folders/f-parent -> usunięty (kod 0)
+    res_a1 = MagicMock(returncode=0, stdout="✔ deleted", stderr="")
+    res_child = MagicMock(returncode=1, stdout="", stderr="Error: 404 Not Found")
+    res_parent = MagicMock(returncode=0, stdout="✔ deleted", stderr="")
+
+    with patch("subprocess.run", side_effect=[res_a1, res_child, res_parent]):
+        exit_code = _execute_commands(cmds, repo_root=Path("/fake"), is_apply=True)
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    # Sprawdzamy, czy nagłówek "Deleting" pojawił się dokładnie RAZ
+    assert captured.out.count("🚀 Deleting resources from Grafana:") == 1
+    # Wszystkie 3 selektory wymienione w jednym skonsolidowanym bloku
+    assert "alertrules/a-1" in captured.out
+    assert "folders/f-child" in captured.out
+    assert "folders/f-parent" in captured.out
+    # Podsumowanie końcowe: 2 usunięte, 1 już nieobecny
+    assert "2 resources deleted, 1 already absent in Grafana, 0 errors" in captured.out
+
+
+def test_delete_idempotent_when_resource_absent_with_code_4(capsys) -> None:
+    """
+    Sprawdza, czy gdy GCX delete zwróci kod 4 (bo zasób nie istnieje w Grafanie i nie wypisze 404),
+    silnik weryfikuje istnienie zasobu przez 'get', uznaje go za nieobecny i nie przerywa wdrożenia.
+    """
+    cmds = [
+        ["gcx", "resources", "delete", "recordingrules/r-1", "dashboards/d-1", "-y"],
+    ]
+
+    # Symulacja:
+    # 1. delete batch -> kod 4, stderr="warn: 2 resource(s) failed to delete\n✘ 0 resources deleted, 2 errors"
+    # 2. get recordingrules r-1 -> kod 1, stderr="Error: not found"
+    # 3. get dashboards d-1 -> kod 1, stderr="Error: not found"
+    res_del = MagicMock(
+        returncode=4,
+        stdout="✘ 0 resources deleted, 2 errors",
+        stderr="warn: 2 resource(s) failed to delete",
+    )
+    res_chk1 = MagicMock(returncode=1, stdout="", stderr="Error: not found")
+    res_chk2 = MagicMock(returncode=1, stdout="", stderr="Error: not found")
+
+    with patch("subprocess.run", side_effect=[res_del, res_chk1, res_chk2]):
+        exit_code = _execute_commands(cmds, repo_root=Path("/fake"), is_apply=True)
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "2 already absent in Grafana, 0 errors" in captured.out
+
+
+def test_delete_reports_real_failure_when_resource_exists(capsys) -> None:
+    """
+    Sprawdza, że jeśli zasób ISTNIEJE w Grafanie, ale nie daje się usunąć (np. niepusty folder),
+    silnik NIE uznaje go za absent, lecz poprawnie raportuje błąd i przerywa z kodem 4.
+    """
+    cmds = [
+        ["gcx", "resources", "delete", "folders/f-active", "-y"],
+    ]
+
+    res_del = MagicMock(returncode=4, stdout="", stderr="warn: 1 resource(s) failed to delete")
+    res_chk = MagicMock(returncode=0, stdout='{"metadata": {"name": "f-active"}}', stderr="")
+    res_retry = MagicMock(
+        returncode=4, stdout="", stderr="folder still contains active dashboards"
+    )
+
+    with patch("subprocess.run", side_effect=[res_del, res_chk, res_retry]):
+        exit_code = _execute_commands(cmds, repo_root=Path("/fake"), is_apply=True)
+
+    assert exit_code == 4
+    captured = capsys.readouterr()
+    assert "Deletion failed – 1 resource(s) could not be deleted:" in captured.out
+    assert "folders/f-active" in captured.out
+    assert "Folder could not be deleted" in captured.out
