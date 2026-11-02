@@ -212,14 +212,10 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
         lines.append("")
 
     if not plan.items:
-        if is_apply:
-            lines.append(
-                "## No changes applied. Grafana state matches repository (0 added, 0 changed, 0 destroyed)."
-            )
-        else:
-            lines.append(
-                "## No changes. Grafana state matches repository (0 to add, 0 to change, 0 to destroy)."
-            )
+        prefix = "## No changes applied" if is_apply else "## No changes"
+        lines.append(
+            f"{prefix}. Grafana state matches repository (0 to add, 0 to change, 0 to destroy)."
+        )
         return "\n".join(lines)
 
     symbols = {
@@ -239,14 +235,10 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
         lines.append(f'{sym} {item.kind:<10} "{location}" ({item.name})')
     lines.append("```")
     lines.append("")
-    if is_apply:
-        lines.append(
-            f"## Apply: {len(plan.to_add)} added, {len(plan.to_change)} changed, {len(plan.to_destroy)} destroyed."
-        )
-    else:
-        lines.append(
-            f"## Plan: {len(plan.to_add)} to add, {len(plan.to_change)} to change, {len(plan.to_destroy)} to destroy."
-        )
+    action_label = "Apply" if is_apply else "Plan"
+    lines.append(
+        f"## {action_label}: {len(plan.to_add)} to add, {len(plan.to_change)} to change, {len(plan.to_destroy)} to destroy."
+    )
     return "\n".join(lines)
 
 

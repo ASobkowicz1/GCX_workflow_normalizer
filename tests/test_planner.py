@@ -89,7 +89,7 @@ def test_full_git_lifecycle_create_update_destroy(tmp_path: Path) -> None:
     assert '- Dashboard  "PRD/Azure/Old Dash"' in summary
 
     summary_apply = format_terraform_summary(plan, is_apply=True)
-    assert "Apply: 1 added, 1 changed, 1 destroyed." in summary_apply
+    assert "Apply: 1 to add, 1 to change, 1 to destroy." in summary_apply
 
     # Sprawdźmy wygenerowane komendy GCX w trybie dry_run (validate dla push_items) oraz deploy (validate + push + delete)
     cmds_dry = build_gcx_delta_commands(plan, gcx_bin="./gcx", dry_run=True)
