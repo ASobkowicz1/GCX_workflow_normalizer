@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from normalizer.cli import _format_command_header
 from normalizer.models import FileKind, IssueSeverity, PlanActionType
 from normalizer.parser import detect_and_parse
 from normalizer.paths import slugify_filename
@@ -388,3 +389,82 @@ def test_deleted_folder_manifest_with_active_resources_is_not_destroyed(tmp_path
 
     # Ponieważ folder.yaml istnieje na dysku (bo folder nadal ma dashboard), planner nie planuje usunięcia folderu PRD!
     assert all(item.kind != "Folder" or item.action != PlanActionType.DESTROY for item in plan.items)
+
+
+def test_renamed_or_duplicate_folder_manifest_is_cleaned_up(tmp_path: Path) -> None:
+    """
+    Jeśli użytkownik zmieni nazwę pliku folder.yaml (np. na my-folder.yaml lub backup-folder.yaml),
+    normalizator musi usunąć plik o niepoprawnej nazwie i zapewnić, że w katalogu istnieje dokładnie
+    jeden plik folderu: kanoniczny `folder.yaml`.
+    """
+    folder = tmp_path / "PRD" / "Applications"
+    folder.mkdir(parents=True)
+
+    # Użytkownik wrzuca dashboard oraz niekanoniczny plik folderu o innej nazwie
+    (folder / "dash.json").write_text(
+        json.dumps({"title": "App Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+    (folder / "custom-folder.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "apiVersion": "folder.grafana.app/v1beta1",
+                "kind": "Folder",
+                "metadata": {"name": "f-12345678901234567890"},
+                "spec": {"title": "Old Name"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    res = reconcile_data_directory(tmp_path)
+    assert not res.has_errors
+    # Niekanoniczny plik musi zostać skasowany
+    assert not (folder / "custom-folder.yaml").exists()
+    assert folder / "custom-folder.yaml" in res.deleted_raw_files
+    # Kanoniczny folder.yaml musi istnieć
+    assert (folder / "folder.yaml").exists()
+    # W folderze ma być dokładnie jeden plik z kind: Folder (sam folder.yaml)
+    folder_files = [
+        f for f in folder.iterdir()
+        if f.is_file() and detect_and_parse(f).kind == FileKind.CANONICAL_FOLDER
+    ]
+    assert len(folder_files) == 1
+    assert folder_files[0].name == "folder.yaml"
+
+
+def test_format_command_header_clean_display() -> None:
+    """Sprawdza czytelne formatowanie komunikatów o walidowanych i wdrażanych plikach z obcięciem data_dir."""
+    # Walidacja zasobów z podaniem data_dir
+    cmd_validate = [
+        "gcx",
+        "resources",
+        "validate",
+        "-p",
+        "example_repo/grafana/PRD/folder.yaml",
+        "-p",
+        "example_repo/grafana/PRD/d-app.yaml",
+    ]
+    header_val = _format_command_header(
+        cmd_validate, is_apply=False, data_dir="example_repo/grafana"
+    )
+    assert "🔍 Validating resources against Grafana API:" in header_val
+    assert "  • PRD/folder.yaml" in header_val
+    assert "  • PRD/d-app.yaml" in header_val
+    assert "example_repo/grafana" not in header_val
+    assert "-p" not in header_val
+
+    # Push zasobów z podaniem data_dir
+    cmd_push = ["gcx", "resources", "push", "-p", "example_repo/grafana/PRD/folder.yaml"]
+    header_push = _format_command_header(
+        cmd_push, is_apply=True, data_dir="example_repo/grafana"
+    )
+    assert "🚀 Pushing resources to Grafana:" in header_push
+    assert "  • PRD/folder.yaml" in header_push
+    assert "example_repo/grafana" not in header_push
+
+    # Delete zasobów (selektory kind/uid)
+    cmd_delete = ["gcx", "resources", "delete", "dashboards/d-12345", "-y"]
+    header_del = _format_command_header(cmd_delete, is_apply=True)
+    assert "🚀 Deleting resources from Grafana:" in header_del
+    assert "  • dashboards/d-12345" in header_del

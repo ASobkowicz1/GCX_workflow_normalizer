@@ -43,14 +43,71 @@ def _filter_gcx_output(text: str) -> str:
     return "\n".join(filtered_lines)
 
 
-def _execute_commands(commands: list[list[str]], repo_root: Path, is_apply: bool = False) -> int:
+def _format_command_header(
+    cmd: list[str],
+    is_apply: bool = False,
+    data_dir: str = "",
+) -> str:
+    """Tworzy czytelny nagłówek informujący użytkownika o przetwarzanych plikach/zasobach zamiast surowej komendy CLI."""
+    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    if "validate" in cmd:
+        files = [
+            cmd[i + 1].removeprefix(data_prefix)
+            for i in range(len(cmd) - 1)
+            if cmd[i] == "-p"
+        ]
+        if files:
+            lines = ["🔍 Validating resources against Grafana API:"]
+            for f in files:
+                lines.append(f"  • {f}")
+            return "\n".join(lines)
+        return "🔍 Validating resources against Grafana API..."
+
+    if "push" in cmd:
+        files = [
+            cmd[i + 1].removeprefix(data_prefix)
+            for i in range(len(cmd) - 1)
+            if cmd[i] == "-p"
+        ]
+        if files:
+            lines = ["🚀 Pushing resources to Grafana:"]
+            for f in files:
+                lines.append(f"  • {f}")
+            return "\n".join(lines)
+        return "🚀 Pushing resources to Grafana..."
+
+    if "delete" in cmd:
+        selectors = [
+            arg
+            for arg in cmd[1:]
+            if not arg.startswith("-") and arg not in ("resources", "delete")
+        ]
+        if selectors:
+            lines = ["🚀 Deleting resources from Grafana:"]
+            for s in selectors:
+                lines.append(f"  • {s}")
+            return "\n".join(lines)
+        return "🚀 Deleting resources from Grafana..."
+
+    cmd_display = [Path(cmd[0]).name] + cmd[1:]
+    prefix = (
+        "🔍 Validating"
+        if (not is_apply or "validate" in cmd or "--dry-run" in cmd)
+        else "🚀 Applying"
+    )
+    return f"{prefix}: {' '.join(cmd_display)}"
+
+
+def _execute_commands(
+    commands: list[list[str]],
+    repo_root: Path,
+    is_apply: bool = False,
+    data_dir: str = "",
+) -> int:
     """Uruchamia kolejne polecenia GCX i przerywa wykonanie w razie błędu."""
     for cmd in commands:
-        is_validation_step = not is_apply or "validate" in cmd or "--dry-run" in cmd
         is_delete_step = "delete" in cmd
-        prefix = "🔍 Validating" if is_validation_step else "🚀 Applying"
-        # W logu pokazujemy samą nazwę binarki (np. "gcx") zamiast pełnej ścieżki
-        print(f"\n{prefix}: {' '.join([Path(cmd[0]).name, *cmd[1:]])}")
+        print(f"\n{_format_command_header(cmd, is_apply, data_dir=data_dir)}")
         proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
         if proc.stdout:
             cleaned_out = _filter_gcx_output(proc.stdout)
@@ -137,7 +194,9 @@ def main(argv: list[str] | None = None) -> int:
                 gcx_bin=gcx_bin,
                 dry_run=True,
             )
-            return _execute_commands(commands, repo_root, is_apply=False)
+            return _execute_commands(
+                commands, repo_root, is_apply=False, data_dir=args.data_dir
+            )
         return 0
 
     if args.mode == "deploy":
@@ -160,7 +219,9 @@ def main(argv: list[str] | None = None) -> int:
                 gcx_bin=gcx_bin,
                 dry_run=False,
             )
-            return _execute_commands(commands, repo_root, is_apply=True)
+            return _execute_commands(
+                commands, repo_root, is_apply=True, data_dir=args.data_dir
+            )
         return 0
 
     return 0

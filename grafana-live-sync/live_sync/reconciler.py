@@ -163,6 +163,11 @@ def _reconcile_single_directory(
             )
             continue
         if parsed.kind == FileKind.CANONICAL_FOLDER:
+            # W folderze może istnieć wyłącznie jeden plik folderu: `folder.yaml`.
+            # Jeśli plik ma strukturę manifestu folderu, ale inną nazwę, usuwamy go.
+            if file_path.exists():
+                file_path.unlink()
+                result.deleted_raw_files.append(file_path)
             continue
 
         expanded = _expand_parsed_file_to_candidates(parsed, result.issues)

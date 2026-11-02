@@ -210,6 +210,7 @@ def reconcile_data_directory(
         valid_dirs.append((folder_dir, canonical_path, depth))
         folder_uid = generate_uid("f", canonical_path)
 
+        raw_files_to_delete: set[Path] = set()
         # Grupowanie zasobów w katalogu po ich docelowej nazwie pliku (np. d-active-users.yaml)
         by_target_name: dict[str, list[_CandidateResource]] = {}
         for f in files_in_dir:
@@ -228,6 +229,10 @@ def reconcile_data_directory(
                 )
                 continue
             if parsed.kind == FileKind.CANONICAL_FOLDER:
+                # W folderze może istnieć wyłącznie jeden plik folderu: `folder.yaml`.
+                # Jeśli plik ma strukturę manifestu folderu, ale inną nazwę (np. został przemianowany),
+                # usuwamy go, aby nie duplikować zasobu.
+                raw_files_to_delete.add(f)
                 continue
 
             # Sprawdzenie czy użytkownik nie wyeksportował dashboardu z opcją "Export for sharing externally" (__inputs)
@@ -249,7 +254,6 @@ def reconcile_data_directory(
 
         # Rozstrzyganie: pojedynczy zasób, aktualizacja istniejącego zasobu czy kolizja nazw
         winners: list[_CandidateResource] = []
-        raw_files_to_delete: set[Path] = set()
 
         for target_filename, group in by_target_name.items():
             if len(group) == 1:

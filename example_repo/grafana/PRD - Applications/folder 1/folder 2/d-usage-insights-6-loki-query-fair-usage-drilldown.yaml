@@ -1,0 +1,1826 @@
+apiVersion: dashboard.grafana.app/v2
+kind: Dashboard
+metadata:
+  name: d-b615993820c4acf3eb79
+  annotations:
+    grafana.app/folder: f-1f11106a7ea764cdbbb9
+spec:
+  annotations:
+  - kind: AnnotationQuery
+    spec:
+      query:
+        kind: DataQuery
+        group: grafana
+        version: v0
+        datasource:
+          name: -- Grafana --
+        spec: {}
+      enable: true
+      hide: true
+      iconColor: rgba(0, 211, 255, 1)
+      name: Annotations & Alerts
+      builtIn: true
+      legacyOptions:
+        type: dashboard
+  cursorSync: 'Off'
+  description: This dashboard exists to help identify queries that are heavy hitters
+    relative to your Query Fair Usage Ratio.
+  editable: false
+  elements:
+    panel-1:
+      kind: Panel
+      spec:
+        id: 1
+        title: query bytes breakdown
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*" | source!~"grafana-alert|grafana-lokiexplore-app"|
+                      dashboard_id="" | unwrap bytes(total_bytes) [$__range]))
+                    legendFormat: explore/other
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source!="grafana-alert"|
+                      dashboard_id!="" | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: dashboards
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-alert"
+                      | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: grafana-alerts
+                    queryType: instant
+                refId: C
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-lokiexplore-app"
+                      | unwrap bytes(total_bytes)[$__range]))
+                    queryType: instant
+                refId: D
+                hidden: false
+            transformations: []
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: piechart
+          version: ''
+          spec:
+            options:
+              displayLabels:
+              - percent
+              - name
+              legend:
+                displayMode: table
+                placement: bottom
+                showLegend: true
+                values:
+                - value
+                - percent
+              pieType: pie
+              reduceOptions:
+                calcs:
+                - lastNotNull
+                fields: ''
+                values: false
+              tooltip:
+                mode: single
+                sort: none
+            fieldConfig:
+              defaults:
+                unit: bytes
+                color:
+                  mode: palette-classic
+                custom:
+                  hideFrom:
+                    legend: false
+                    tooltip: false
+                    viz: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: displayName
+                  value: explore/other
+              - matcher:
+                  id: byName
+                  options: 'Value #B'
+                properties:
+                - id: displayName
+                  value: dashboard
+              - matcher:
+                  id: byName
+                  options: 'Value #C'
+                properties:
+                - id: displayName
+                  value: grafana-alerts
+              - matcher:
+                  id: byName
+                  options: 'Value #D'
+                properties:
+                - id: displayName
+                  value: Explore Logs App
+    panel-11:
+      kind: Panel
+      spec:
+        id: 11
+        title: Grafana Alerts
+        description: If *some* rulers in this table do not show rule_folder and rule_name
+          values then they are likely Grafana Recorded Queries and not Grafana Managed
+          Alerts
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: topk(20, sum by (query_hash, query, rule_name, rule_folder,
+                      user) (sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-alert"|
+                      unwrap bytes(total_bytes)[$__range])))
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "topk(10000,\n    sum by (query_hash) (\n        count_over_time(\n\
+                      \            {org_id=\"$orgID\"} |= \"request timings\" |logfmt|\
+                      \ user=~\"$instance\" | path=~\"/loki/api/v1/.*\"| source=\"\
+                      grafana-alert\" | total_bytes > 1MB\n            [$__range]\n\
+                      \        )\n    ) > 0\n)"
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "60\n/\n(\n    topk(10000,\n        sum by (query_hash)\
+                      \ (\n            count_over_time(\n                {org_id=\"\
+                      $orgID\"} |= \"request timings\" |logfmt| user=~\"$instance\"\
+                      \ | path=~\"/loki/api/v1/.*\"| source=\"grafana-alert\" | total_bytes\
+                      \ > 1MB\n                [$__range]\n            )\n       \
+                      \ ) > 0\n    )\n    /\n    ($__range_s/60)\n)"
+                    queryType: instant
+                refId: C
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: query_hash
+                  mode: inner
+            - kind: Transformation
+              group: sortBy
+              spec:
+                options:
+                  sort:
+                  - desc: true
+                    field: 'Value #A'
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  byVariable: false
+                  include:
+                    names:
+                    - query_hash
+                    - query
+                    - rule_folder
+                    - user
+                    - 'Value #A'
+                    - 'Value #B'
+                    - 'Value #C'
+                    - rule_name
+            - kind: Transformation
+              group: limit
+              spec:
+                options:
+                  limitField: '10'
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  indexByName:
+                    'Value #A': 5
+                    'Value #B': 6
+                    'Value #C': 7
+                    query: 2
+                    query_hash: 0
+                    rule_folder: 3
+                    rule_name: 4
+                    user: 1
+                  renameByName:
+                    'Value #A': ''
+                    'Value #B': '# of queries in range'
+                    'Value #C': estimated interval
+            - kind: Transformation
+              group: calculateField
+              spec:
+                options:
+                  alias: bytes per query
+                  binary:
+                    left:
+                      matcher:
+                        id: byName
+                        options: 'Value #A'
+                    operator: /
+                    right:
+                      matcher:
+                        id: byName
+                        options: '# of queries in range'
+                  mode: binary
+                  reduce:
+                    reducer: sum
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              showHeader: true
+            fieldConfig:
+              defaults:
+                color:
+                  mode: palette-classic
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+                - id: displayName
+                  value: total bytes queried
+              - matcher:
+                  id: byName
+                  options: panel_id
+                properties:
+                - id: custom.width
+                  value: 92
+              - matcher:
+                  id: byName
+                  options: query
+                properties:
+                - id: custom.width
+                  value: 207
+              - matcher:
+                  id: byName
+                  options: query_hash
+                properties:
+                - id: custom.width
+                  value: 139
+              - matcher:
+                  id: byName
+                  options: grafana_username
+                properties:
+                - id: custom.width
+                  value: 269
+              - matcher:
+                  id: byName
+                  options: rule_folder
+                properties:
+                - id: custom.width
+                  value: 168
+              - matcher:
+                  id: byName
+                  options: rule_name
+                properties:
+                - id: custom.width
+                  value: 499
+              - matcher:
+                  id: byName
+                  options: estimated interval
+                properties:
+                - id: unit
+                  value: s
+              - matcher:
+                  id: byName
+                  options: bytes per query
+                properties:
+                - id: unit
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: user
+                properties:
+                - id: displayName
+                  value: Loki Instance ID
+    panel-13:
+      kind: Panel
+      spec:
+        id: 13
+        title: Explore Logs Queries
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: topk(20, sum by (query_hash, query, panel_id, grafana_username,
+                      user) (sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-lokiexplore-app"
+                      | unwrap bytes(total_bytes)[$__range])))
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "topk(10000,\n    sum by (query_hash) (\n        count_over_time(\n\
+                      \            {org_id=\"$orgID\"} |= \"request timings\" |logfmt|\
+                      \ user=~\"$instance\" | path=~\"/loki/api/v1/.*\" |source=\"\
+                      grafana-lokiexplore-app\"| dashboard_id=\"\" | total_bytes >\
+                      \ 1MB\n            [$__range]\n        )\n    ) > 0\n)"
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "60\n/\n(\n    topk(10000,\n        sum by (query_hash)\
+                      \ (\n            count_over_time(\n                {org_id=\"\
+                      $orgID\"} |= \"request timings\" |logfmt| user=~\"$instance\"\
+                      \ | path=~\"/loki/api/v1/.*\" | source=\"grafana-lokiexplore-app\"\
+                      | dashboard_id=\"\" | total_bytes > 1MB\n                [$__range]\n\
+                      \            )\n        ) > 0\n    )\n    /\n    ($__range_s/60)\n\
+                      )"
+                    queryType: instant
+                refId: C
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: query_hash
+                  mode: inner
+            - kind: Transformation
+              group: sortBy
+              spec:
+                options:
+                  sort:
+                  - desc: true
+                    field: 'Value #A'
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  include:
+                    names:
+                    - query_hash
+                    - grafana_username
+                    - user
+                    - 'Value #A'
+                    - 'Value #B'
+                    - 'Value #C'
+                    - query
+            - kind: Transformation
+              group: limit
+              spec:
+                options:
+                  limitField: '10'
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  indexByName:
+                    'Value #A': 4
+                    'Value #B': 5
+                    'Value #C': 6
+                    grafana_username: 2
+                    query: 3
+                    query_hash: 0
+                    user: 1
+                  renameByName:
+                    'Value #B': '# of queries in range'
+                    'Value #C': Estimated interval
+            - kind: Transformation
+              group: calculateField
+              spec:
+                options:
+                  alias: bytes per query
+                  binary:
+                    left:
+                      matcher:
+                        id: byName
+                        options: 'Value #A'
+                    operator: /
+                    right:
+                      matcher:
+                        id: byName
+                        options: '# of queries in range'
+                  mode: binary
+                  reduce:
+                    reducer: sum
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              showHeader: true
+            fieldConfig:
+              defaults:
+                thresholds:
+                  mode: absolute
+                  steps:
+                  - value: null
+                    color: green
+                  - value: 80
+                    color: red
+                color:
+                  mode: thresholds
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+                - id: displayName
+                  value: total bytes queried
+              - matcher:
+                  id: byName
+                  options: panel_id
+                properties:
+                - id: custom.width
+                  value: 92
+              - matcher:
+                  id: byName
+                  options: query
+                properties:
+                - id: custom.width
+                  value: 527
+              - matcher:
+                  id: byName
+                  options: query_hash
+                properties:
+                - id: custom.width
+                  value: 136
+              - matcher:
+                  id: byName
+                  options: grafana_username
+                properties:
+                - id: custom.width
+                  value: 269
+              - matcher:
+                  id: byName
+                  options: Estimated interval
+                properties:
+                - id: unit
+                  value: s
+              - matcher:
+                  id: byName
+                  options: bytes per query
+                properties:
+                - id: unit
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: user
+                properties:
+                - id: displayName
+                  value: Loki Instance ID
+    panel-2:
+      kind: Panel
+      spec:
+        id: 2
+        title: query types count
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(count_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source=""|
+                      dashboard_id="" [$__range]))
+                    legendFormat: explore/other
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(count_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source!="grafana-alert"|
+                      dashboard_id!=""[$__range]))
+                    legendFormat: dashboards
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(count_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-alert"[$__range]))
+                    legendFormat: grafana-alerts
+                    queryType: instant
+                refId: C
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(count_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-lokiexplore-app"[$__range]))
+                    legendFormat: grafana-alerts
+                    queryType: instant
+                refId: D
+                hidden: false
+            transformations: []
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: piechart
+          version: ''
+          spec:
+            options:
+              displayLabels:
+              - percent
+              - name
+              legend:
+                displayMode: table
+                placement: bottom
+                showLegend: true
+                values:
+                - value
+                - percent
+              pieType: pie
+              reduceOptions:
+                calcs:
+                - lastNotNull
+                fields: ''
+                values: false
+              tooltip:
+                mode: single
+                sort: none
+            fieldConfig:
+              defaults:
+                unit: none
+                color:
+                  mode: palette-classic
+                custom:
+                  hideFrom:
+                    legend: false
+                    tooltip: false
+                    viz: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: displayName
+                  value: explore/other
+              - matcher:
+                  id: byName
+                  options: 'Value #B'
+                properties:
+                - id: displayName
+                  value: dashboard
+              - matcher:
+                  id: byName
+                  options: 'Value #C'
+                properties:
+                - id: displayName
+                  value: grafana-alerts
+              - matcher:
+                  id: byName
+                  options: 'Value #D'
+                properties:
+                - id: displayName
+                  value: Explore Logs App
+    panel-3:
+      kind: Panel
+      spec:
+        id: 3
+        title: bytes by source
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source=""|
+                      dashboard_id!=""  | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: dashboards
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-alert"
+                      | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: grafana-alert
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source!~"grafana-alert|grafana-lokiexplore-app"|
+                      dashboard_id=""  | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: explore/other
+                    queryType: instant
+                refId: C
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum(sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source="grafana-lokiexplore-app"  |
+                      unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: explore/other
+                    queryType: instant
+                refId: D
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: merge
+              spec:
+                disabled: true
+                options: null
+            - kind: Transformation
+              group: organize
+              spec:
+                disabled: true
+                options:
+                  excludeByName:
+                    Time: true
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: stat
+          version: ''
+          spec:
+            options:
+              colorMode: value
+              graphMode: area
+              justifyMode: auto
+              orientation: auto
+              percentChangeColorMode: standard
+              reduceOptions:
+                calcs:
+                - lastNotNull
+                fields: ''
+                values: false
+              showPercentChange: false
+              textMode: auto
+              wideLayout: true
+            fieldConfig:
+              defaults:
+                unit: bytes
+                color:
+                  mode: continuous-GrYlRd
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: displayName
+                  value: dashboards
+              - matcher:
+                  id: byName
+                  options: 'Value #B'
+                properties:
+                - id: displayName
+                  value: grafana-alert
+              - matcher:
+                  id: byName
+                  options: 'Value #C'
+                properties:
+                - id: displayName
+                  value: explore/other
+              - matcher:
+                  id: byName
+                  options: 'Value #D'
+                properties:
+                - id: displayName
+                  value: Explore Logs App
+    panel-4:
+      kind: Panel
+      spec:
+        id: 4
+        title: Top Users
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: topk(20, sum by (grafana_username) (sum_over_time({org_id="$orgID"}
+                      |= "request timings" |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"
+                      | source!="grafana-alert" | grafana_username!=""  | unwrap bytes(total_bytes)[$__range])))
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "topk(10000,\n    sum by (query_hash) (\n        count_over_time(\n\
+                      \            {org_id=\"$orgID\"} |= \"request timings\" |logfmt|\
+                      \ user=~\"$instance\" | path=~\"/loki/api/v1/.*\"| source!=\"\
+                      grafana-alert\"| dashboard_id=\"\" | total_bytes > 1MB\n   \
+                      \         [$__range]\n        )\n    ) > 0\n)"
+                    queryType: instant
+                refId: B
+                hidden: true
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "60\n/\n(\n    topk(10000,\n        sum by (query_hash)\
+                      \ (\n            count_over_time(\n                {org_id=\"\
+                      $orgID\"} |= \"request timings\" |logfmt| user=~\"$instance\"\
+                      \ | path=~\"/loki/api/v1/.*\"| source!=\"grafana-alert\"| dashboard_id=\"\
+                      \" | total_bytes > 1MB\n                [$__range]\n       \
+                      \     )\n        ) > 0\n    )\n    /\n    ($__range_s/60)\n)"
+                    queryType: instant
+                refId: C
+                hidden: true
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: query_hash
+                  mode: inner
+            - kind: Transformation
+              group: sortBy
+              spec:
+                options:
+                  sort:
+                  - desc: true
+                    field: 'Value #A'
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  include:
+                    names:
+                    - query_hash
+                    - grafana_username
+                    - 'Value #A'
+                    - 'Value #B'
+                    - 'Value #C'
+            - kind: Transformation
+              group: limit
+              spec:
+                options:
+                  limitField: '10'
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  renameByName:
+                    'Value #B': '# of queries in range'
+                    'Value #C': Estimated interval
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              showHeader: true
+              sortBy:
+              - desc: true
+                displayName: bytes
+            fieldConfig:
+              defaults:
+                thresholds:
+                  mode: absolute
+                  steps:
+                  - value: null
+                    color: green
+                  - value: 80
+                    color: red
+                color:
+                  mode: thresholds
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+                - id: displayName
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: panel_id
+                properties:
+                - id: custom.width
+                  value: 92
+              - matcher:
+                  id: byName
+                  options: query
+                properties:
+                - id: custom.width
+                  value: 979
+              - matcher:
+                  id: byName
+                  options: query_hash
+                properties:
+                - id: custom.width
+                  value: 136
+              - matcher:
+                  id: byName
+                  options: grafana_username
+                properties:
+                - id: custom.width
+                  value: 269
+    panel-5:
+      kind: Panel
+      spec:
+        id: 5
+        title: Bytes by Loki Instance
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: sum by (user) (sum_over_time({org_id="$orgID"} |= "request
+                      timings" | logfmt | user=~"$instance"| path=~"/loki/api/v1/.*"
+                      | unwrap bytes(total_bytes)[$__range]))
+                    legendFormat: '{{$user}}'
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: prometheus
+                  version: v0
+                  datasource:
+                    name: grafanacloud-usage
+                  spec:
+                    editorMode: code
+                    exemplar: false
+                    expr: sum by (user, name) (label_replace(grafanacloud_logs_instance_info{org_id=~"$orgID",id=~"$instance"},
+                      "user", "$1", "id", "(.*)"))
+                    format: table
+                    instant: true
+                    legendFormat: __auto
+                    range: false
+                refId: B
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: user
+                  mode: inner
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  byVariable: false
+                  include:
+                    names:
+                    - user
+                    - 'Value #A'
+                    - name
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  indexByName:
+                    'Value #A': 2
+                    name: 1
+                    user: 0
+                  renameByName:
+                    'Value #A': bytes
+                    name: Cloud Logs Stack Name
+                    user: Loki Instance ID
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              frameIndex: 0
+              showHeader: true
+            fieldConfig:
+              defaults:
+                thresholds:
+                  mode: absolute
+                  steps:
+                  - value: null
+                    color: green
+                  - value: 80
+                    color: red
+                color:
+                  mode: thresholds
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: Loki Instance ID
+                properties:
+                - id: custom.width
+                  value: 127
+    panel-7:
+      kind: Panel
+      spec:
+        id: 7
+        title: Explore/Other Queries
+        description: This panel shows queries executed via the default Explore page
+          and queries executed from non-Grafana frontend sources, such as logcli.
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: topk(20, sum by (query_hash, query, panel_id, grafana_username,
+                      user) (sum_over_time({org_id="$orgID"} |= "request timings"
+                      |logfmt| user=~"$instance" | path=~"/loki/api/v1/.*"| source=""|
+                      dashboard_id=""  | unwrap bytes(total_bytes)[$__range])))
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "topk(10000,\n    sum by (query_hash) (\n        count_over_time(\n\
+                      \            {org_id=\"$orgID\"} |= \"request timings\" |logfmt|\
+                      \ user=~\"$instance\" | path=~\"/loki/api/v1/.*\"| source!=\"\
+                      grafana-alert\"| dashboard_id=\"\" | total_bytes > 1MB\n   \
+                      \         [$__range]\n        )\n    ) > 0\n)"
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "60\n/\n(\n    topk(10000,\n        sum by (query_hash)\
+                      \ (\n            count_over_time(\n                {org_id=\"\
+                      $orgID\"} |= \"request timings\" |logfmt| user=~\"$instance\"\
+                      \ | path=~\"/loki/api/v1/.*\"| source!=\"grafana-alert\"| dashboard_id=\"\
+                      \" | total_bytes > 1MB\n                [$__range]\n       \
+                      \     )\n        ) > 0\n    )\n    /\n    ($__range_s/60)\n)"
+                    queryType: instant
+                refId: C
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: query_hash
+                  mode: inner
+            - kind: Transformation
+              group: sortBy
+              spec:
+                options:
+                  sort:
+                  - desc: true
+                    field: 'Value #A'
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  include:
+                    names:
+                    - query_hash
+                    - query
+                    - user
+                    - 'Value #A'
+                    - 'Value #B'
+                    - 'Value #C'
+                    - grafana_username
+            - kind: Transformation
+              group: limit
+              spec:
+                options:
+                  limitField: '10'
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  indexByName:
+                    'Value #A': 4
+                    'Value #B': 5
+                    'Value #C': 6
+                    grafana_username: 2
+                    query: 3
+                    query_hash: 0
+                    user: 1
+                  renameByName:
+                    'Value #B': '# of queries in range'
+                    'Value #C': Estimated interval
+            - kind: Transformation
+              group: calculateField
+              spec:
+                options:
+                  alias: bytes per query
+                  binary:
+                    left:
+                      matcher:
+                        id: byName
+                        options: 'Value #A'
+                    operator: /
+                    right:
+                      matcher:
+                        id: byName
+                        options: '# of queries in range'
+                  mode: binary
+                  reduce:
+                    include:
+                    - 'Value #A'
+                    reducer: sum
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              showHeader: true
+              sortBy:
+              - desc: true
+                displayName: bytes per query
+            fieldConfig:
+              defaults:
+                thresholds:
+                  mode: absolute
+                  steps:
+                  - value: null
+                    color: green
+                  - value: 80
+                    color: red
+                color:
+                  mode: thresholds
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+                - id: displayName
+                  value: total bytes queried
+              - matcher:
+                  id: byName
+                  options: panel_id
+                properties:
+                - id: custom.width
+                  value: 92
+              - matcher:
+                  id: byName
+                  options: query
+                properties:
+                - id: custom.width
+                  value: 979
+              - matcher:
+                  id: byName
+                  options: query_hash
+                properties:
+                - id: custom.width
+                  value: 136
+              - matcher:
+                  id: byName
+                  options: grafana_username
+                properties:
+                - id: custom.width
+                  value: 206
+              - matcher:
+                  id: byName
+                  options: bytes per query
+                properties:
+                - id: unit
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: Estimated interval
+                properties:
+                - id: unit
+                  value: s
+              - matcher:
+                  id: byName
+                  options: user
+                properties:
+                - id: displayName
+                  value: Loki Instance ID
+    panel-9:
+      kind: Panel
+      spec:
+        id: 9
+        title: Dashboard Queries
+        links: []
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: topk(20, sum by (query_hash, query, dashboard_id, dashboard_title,
+                      panel_title, panel_id, grafana_username, user) (sum_over_time({org_id="$orgID"}
+                      |= "request timings" |logfmt | user=~"$instance" | path=~"/loki/api/v1/.*"|
+                      source!="grafana-alert"| dashboard_id!=""  | unwrap bytes(total_bytes)[$__range])))
+                    queryType: instant
+                refId: A
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "topk(10000,\n    sum by (query_hash) (\n        count_over_time(\n\
+                      \            {org_id=\"$orgID\"} |= \"request timings\" |logfmt|\
+                      \ user=~\"$instance\" | path=~\"/loki/api/v1/.*\"| source!=\"\
+                      grafana-alert\"| dashboard_id!=\"\"\n                | total_bytes\
+                      \ > 1MB\n            [$__range]\n        )\n    ) > 0\n)"
+                    queryType: instant
+                refId: B
+                hidden: false
+            - kind: PanelQuery
+              spec:
+                query:
+                  kind: DataQuery
+                  group: loki
+                  version: v0
+                  datasource:
+                    name: grafanacloud-asdevstack-usage-insights
+                  spec:
+                    editorMode: code
+                    expr: "60\n/\n(\n    topk(10000,\n        sum by (query_hash)\
+                      \ (\n            count_over_time(\n                {org_id=\"\
+                      $orgID\"} |= \"request timings\" |logfmt| user=~\"$instance\"\
+                      \ | path=~\"/loki/api/v1/.*\"| source!=\"grafana-alert\"| dashboard_id!=\"\
+                      \"\n                    | total_bytes > 1MB\n              \
+                      \  [$__range]\n            )\n        ) > 0\n    )\n    /\n\
+                      \    ($__range_s/60)\n)"
+                    queryType: instant
+                refId: C
+                hidden: false
+            transformations:
+            - kind: Transformation
+              group: joinByField
+              spec:
+                options:
+                  byField: query_hash
+                  mode: inner
+            - kind: Transformation
+              group: sortBy
+              spec:
+                disabled: true
+                options:
+                  sort:
+                  - desc: true
+                    field: 'Value #A'
+            - kind: Transformation
+              group: filterFieldsByName
+              spec:
+                options:
+                  include:
+                    names:
+                    - query_hash
+                    - dashboard_id
+                    - dashboard_title
+                    - grafana_username
+                    - panel_id
+                    - query
+                    - user
+                    - 'Value #A'
+                    - 'Value #B'
+                    - 'Value #C'
+                    - panel_title
+            - kind: Transformation
+              group: limit
+              spec:
+                options:
+                  limitField: '10'
+            - kind: Transformation
+              group: organize
+              spec:
+                options:
+                  indexByName:
+                    'Value #A': 8
+                    'Value #B': 9
+                    'Value #C': 10
+                    dashboard_id: 3
+                    dashboard_title: 4
+                    grafana_username: 0
+                    panel_id: 5
+                    panel_title: 6
+                    query: 7
+                    query_hash: 2
+                    user: 1
+                  renameByName:
+                    'Value #B': '# of queries in range'
+                    'Value #C': Estimated interval
+            - kind: Transformation
+              group: calculateField
+              spec:
+                options:
+                  alias: bytes per query
+                  binary:
+                    left:
+                      matcher:
+                        id: byName
+                        options: 'Value #A'
+                    operator: /
+                    right:
+                      matcher:
+                        id: byName
+                        options: '# of queries in range'
+                  mode: binary
+                  reduce:
+                    reducer: sum
+            queryOptions: {}
+        vizConfig:
+          kind: VizConfig
+          group: table
+          version: ''
+          spec:
+            options:
+              cellHeight: sm
+              showHeader: true
+              sortBy:
+              - desc: true
+                displayName: bytes
+            fieldConfig:
+              defaults:
+                thresholds:
+                  mode: absolute
+                  steps:
+                  - value: null
+                    color: green
+                  - value: 80
+                    color: red
+                color:
+                  mode: thresholds
+                custom:
+                  align: auto
+                  cellOptions:
+                    type: auto
+                  inspect: false
+              overrides:
+              - matcher:
+                  id: byName
+                  options: 'Value #A'
+                properties:
+                - id: unit
+                  value: bytes
+                - id: displayName
+                  value: total bytes queried
+              - matcher:
+                  id: byName
+                  options: panel_id
+                properties:
+                - id: custom.width
+                  value: 92
+              - matcher:
+                  id: byName
+                  options: query
+                properties:
+                - id: custom.width
+                  value: 979
+              - matcher:
+                  id: byName
+                  options: query_hash
+                properties:
+                - id: custom.width
+                  value: 136
+              - matcher:
+                  id: byName
+                  options: grafana_username
+                properties:
+                - id: custom.width
+                  value: 269
+              - matcher:
+                  id: byName
+                  options: Estimated interval
+                properties:
+                - id: unit
+                  value: s
+              - matcher:
+                  id: byName
+                  options: bytes per query
+                properties:
+                - id: unit
+                  value: bytes
+              - matcher:
+                  id: byName
+                  options: user
+                properties:
+                - id: displayName
+                  value: Loki Instance ID
+  layout:
+    kind: RowsLayout
+    spec:
+      rows:
+      - kind: RowsLayoutRow
+        spec:
+          title: ''
+          collapse: false
+          hideHeader: true
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 0
+                  width: 9
+                  height: 10
+                  element:
+                    kind: ElementReference
+                    name: panel-1
+              - kind: GridLayoutItem
+                spec:
+                  x: 9
+                  y: 0
+                  width: 9
+                  height: 10
+                  element:
+                    kind: ElementReference
+                    name: panel-2
+              - kind: GridLayoutItem
+                spec:
+                  x: 18
+                  y: 0
+                  width: 6
+                  height: 10
+                  element:
+                    kind: ElementReference
+                    name: panel-3
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 10
+                  width: 13
+                  height: 10
+                  element:
+                    kind: ElementReference
+                    name: panel-4
+              - kind: GridLayoutItem
+                spec:
+                  x: 13
+                  y: 10
+                  width: 11
+                  height: 10
+                  element:
+                    kind: ElementReference
+                    name: panel-5
+      - kind: RowsLayoutRow
+        spec:
+          title: explore/other
+          collapse: false
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 0
+                  width: 24
+                  height: 11
+                  element:
+                    kind: ElementReference
+                    name: panel-7
+      - kind: RowsLayoutRow
+        spec:
+          title: dashboards
+          collapse: false
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 0
+                  width: 24
+                  height: 11
+                  element:
+                    kind: ElementReference
+                    name: panel-9
+      - kind: RowsLayoutRow
+        spec:
+          title: grafana alerts
+          collapse: false
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 0
+                  width: 24
+                  height: 11
+                  element:
+                    kind: ElementReference
+                    name: panel-11
+      - kind: RowsLayoutRow
+        spec:
+          title: Explore Logs App
+          collapse: false
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  x: 0
+                  y: 0
+                  width: 24
+                  height: 11
+                  element:
+                    kind: ElementReference
+                    name: panel-13
+  links:
+  - title: Usage Insights Overview
+    type: link
+    icon: dashboard
+    tooltip: ''
+    url: /d/XU8HAD5Gk/usage-insights-1-overview
+    tags: []
+    asDropdown: false
+    targetBlank: false
+    includeVars: false
+    keepTime: true
+  liveNow: false
+  preload: false
+  tags:
+  - grafanacloud
+  timeSettings:
+    timezone: browser
+    from: now-30d
+    to: now
+    autoRefresh: ''
+    autoRefreshIntervals:
+    - 1m
+    - 5m
+    - 15m
+    - 30m
+    - 1h
+    - 2h
+    - 1d
+    hideTimepicker: false
+    fiscalYearStartMonth: 0
+  title: Usage Insights - 6 - Loki Query Fair Usage Drilldown
+  variables:
+  - kind: DatasourceVariable
+    spec:
+      name: usageInsightsDS
+      pluginId: loki
+      refresh: onDashboardLoad
+      regex: ''
+      current:
+        text: grafanacloud-ops-usage-insights
+        value: grafanacloud-usage-insights
+      options: []
+      multi: false
+      includeAll: false
+      label: Usage Insights Logs
+      hide: dontHide
+      skipUrlSync: false
+      description: choose the usage insights logs datasource
+      allowCustomValue: true
+  - kind: DatasourceVariable
+    spec:
+      name: metricsUsageDatasource
+      pluginId: prometheus
+      refresh: onDashboardLoad
+      regex: ''
+      current:
+        text: grafanacloud-usage
+        value: grafanacloud-usage
+      options: []
+      multi: false
+      includeAll: false
+      label: Usage (metrics) Datasource
+      hide: dontHide
+      skipUrlSync: false
+      allowCustomValue: true
+  - kind: QueryVariable
+    spec:
+      name: instance
+      current:
+        text: All
+        value: $__all
+      hide: dontHide
+      refresh: onTimeRangeChanged
+      skipUrlSync: false
+      query:
+        kind: DataQuery
+        group: loki
+        version: v0
+        datasource:
+          name: grafanacloud-asdevstack-usage-insights
+        spec:
+          label: instance_id
+          refId: LokiVariableQueryEditor-VariableQuery
+          stream: '{instance_type="logs"}'
+          type: 1
+      regex: ''
+      sort: disabled
+      definition: ''
+      options: []
+      multi: true
+      includeAll: true
+      allowCustomValue: true
+  - kind: QueryVariable
+    spec:
+      name: orgID
+      current:
+        text: '1'
+        value: '1'
+      label: orgID
+      hide: dontHide
+      refresh: onDashboardLoad
+      skipUrlSync: false
+      query:
+        kind: DataQuery
+        group: loki
+        version: v0
+        datasource:
+          name: grafanacloud-asdevstack-usage-insights
+        spec:
+          label: org_id
+          refId: LokiVariableQueryEditor-VariableQuery
+          stream: ''
+          type: 1
+      regex: ''
+      sort: disabled
+      definition: ''
+      options: []
+      multi: false
+      includeAll: false
+      allowCustomValue: true
+  preferences:
+    layout:
+      kind: GridLayout
+      spec:
+        items: []
