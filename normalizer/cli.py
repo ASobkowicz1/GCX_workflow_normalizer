@@ -70,6 +70,11 @@ def _execute_commands(commands: list[list[str]], repo_root: Path, is_apply: bool
                     "⚠️ Resource to delete was already absent in Grafana (404 Not Found) – continuing safely."
                 )
                 continue
+            if is_delete_step and proc.returncode == 4 and any("folders/" in arg for arg in cmd):
+                print(
+                    "⚠️ Folder could not be deleted in Grafana (exit code 4): it still contains active resources or child folders in Grafana.",
+                    file=sys.stderr,
+                )
             print(f"❌ Command failed with exit code {proc.returncode}")
             return proc.returncode
     return 0

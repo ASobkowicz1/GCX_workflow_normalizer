@@ -114,6 +114,8 @@ def build_delta_plan(
         parts = line.split("\t", maxsplit=1)
         if len(parts) == 2:
             status, rel_repo_path = parts[0].strip(), parts[1].strip()
+            if rel_repo_path.startswith('"') and rel_repo_path.endswith('"'):
+                rel_repo_path = rel_repo_path[1:-1]
             file_statuses[rel_repo_path] = status[0]  # 'A', 'M', 'D'
 
     # 2. Doliczenie nowych, nieśledzonych plików (untracked) w trybie porównania z dyskiem
@@ -124,6 +126,8 @@ def build_delta_plan(
         )
         for line in untracked_out.splitlines():
             rel_repo_path = line.strip()
+            if rel_repo_path.startswith('"') and rel_repo_path.endswith('"'):
+                rel_repo_path = rel_repo_path[1:-1]
             if rel_repo_path:
                 file_statuses[rel_repo_path] = "A"
 
@@ -165,6 +169,11 @@ def build_delta_plan(
             )
 
         elif status == "D":
+            # Jeśli plik nadal istnieje na dysku (np. został odtworzony przez reconciler, bo folder nadal zawiera zasoby),
+            # nie planujemy jego usunięcia w Grafanie.
+            if abs_path.exists():
+                continue
+
             # Dla usuniętego pliku odczytujemy jego ostatnią zawartość z Gita za pomocą `git show`
             if abs_path.suffix.lower() not in (".yaml", ".yml"):
                 continue

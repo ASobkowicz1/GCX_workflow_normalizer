@@ -352,3 +352,39 @@ def test_user_directly_edits_canonical_manifest_diff_detected(tmp_path: Path) ->
     assert plan.to_change[0].action == PlanActionType.UPDATE
     assert len(plan.to_add) == 0
     assert len(plan.to_destroy) == 0
+
+
+def test_deleted_folder_manifest_with_active_resources_is_not_destroyed(tmp_path: Path) -> None:
+    """
+    Użytkownik przez pomyłkę usunął plik folder.yaml (lub git diff wykazuje 'D' dla folder.yaml),
+    ale w tym samym folderze nadal znajdują się aktywne alerty lub dashboardy.
+    Reconciler odtwarza folder.yaml na dysku, a planner NIE generuje polecenia DESTROY dla tego folderu
+    (chroniąc przed błędem exit code 4 w Grafana Cloud).
+    """
+    repo = tmp_path / "repo"
+    data_dir = repo / "data" / "PRD"
+    data_dir.mkdir(parents=True)
+
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+
+    (data_dir / "dash.json").write_text(
+        json.dumps({"title": "Active Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
+    reconcile_data_directory(repo / "data")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial commit")
+
+    # Użytkownik kasuje sam plik folder.yaml, zostawiając d-active-dash.yaml
+    (data_dir / "folder.yaml").unlink()
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Accidentally deleted folder.yaml")
+
+    # Reconciler widzi d-active-dash.yaml i odtwarza folder.yaml na dysku
+    reconcile_data_directory(repo / "data")
+    plan = build_delta_plan(repo, data_subdir="data", base_ref="HEAD~1")
+
+    # Ponieważ folder.yaml istnieje na dysku (bo folder nadal ma dashboard), planner nie planuje usunięcia folderu PRD!
+    assert all(item.kind != "Folder" or item.action != PlanActionType.DESTROY for item in plan.items)

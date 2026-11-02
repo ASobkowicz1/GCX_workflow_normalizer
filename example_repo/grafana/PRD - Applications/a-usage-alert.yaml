@@ -57,3 +57,4 @@ spec:
     interval: 1m
   notificationSettings:
     receiver: empty
+    type: SimplifiedRouting
