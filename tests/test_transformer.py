@@ -3,6 +3,7 @@ from pathlib import Path
 from normalizer.models import FileKind, ParsedFile
 from normalizer.parser import detect_and_parse
 from normalizer.transformer import (
+    CANONICAL_ALERT_API_VERSION,
     build_folder_manifest,
     normalize_alertrule,
     normalize_dashboard,
@@ -102,18 +103,21 @@ def test_normalize_alertrule_from_example_repo() -> None:
     assert spec["expressions"]["A"]["datasourceUID"] == "grafanacloud-usage"
     assert spec["expressions"]["A"]["relativeTimeRange"] == {"from": "600s", "to": "0s"}
     assert spec["expressions"]["C"]["source"] is True
-    assert spec["notificationSettings"] == {"receiver": "empty"}
+    assert spec["notificationSettings"] == {
+        "receiver": "empty",
+        "type": "SimplifiedRouting",
+    }
 
 
-def test_normalize_alertrule_preserves_v1beta1() -> None:
+def test_normalize_alertrule_enforces_canonical_api_version() -> None:
     parsed = ParsedFile(
         path=Path("alert.yaml"),
         kind=FileKind.RAW_UI_ALERTRULE,
         data={
-            "apiVersion": "rules.alerting.grafana.app/v1beta1",
+            "apiVersion": "rules.alerting.grafana.app/legacy-version",
             "kind": "AlertRule",
             "metadata": {"name": "raw-name", "uid": "123"},
-            "spec": {"title": "Beta Alert", "for": "5m"},
+            "spec": {"title": "Test Alert", "for": "5m"},
         },
     )
     result = normalize_alertrule(
@@ -121,7 +125,34 @@ def test_normalize_alertrule_preserves_v1beta1() -> None:
         folder_uid="f-11111111111111111111",
         alert_uid="a-22222222222222222222",
     )
-    assert result["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
+    assert result["apiVersion"] == CANONICAL_ALERT_API_VERSION
     assert result["metadata"]["name"] == "a-22222222222222222222"
     assert result["metadata"]["annotations"] == {"grafana.app/folder": "f-11111111111111111111"}
-    assert result["spec"]["title"] == "Beta Alert"
+    assert result["spec"]["title"] == "Test Alert"
+
+
+def test_normalize_alertrule_notification_settings_simplified_routing() -> None:
+    parsed = ParsedFile(
+        path=Path("alert.yaml"),
+        kind=FileKind.RAW_UI_ALERTRULE,
+        data={
+            "apiVersion": 1,
+            "groups": [
+                {
+                    "name": "g1",
+                    "interval": "1m",
+                    "rules": [
+                        {
+                            "title": "Slack Alert",
+                            "notification_settings": {"receiver": "slack-channel"},
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    result = normalize_alertrule(parsed, "f-11111111111111111111", "a-22222222222222222222")
+    assert result["spec"]["notificationSettings"] == {
+        "receiver": "slack-channel",
+        "type": "SimplifiedRouting",
+    }

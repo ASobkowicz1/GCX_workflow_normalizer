@@ -5,6 +5,8 @@ from typing import Any
 
 from live_sync.models import ParsedFile
 
+CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v0alpha1"
+
 
 def build_folder_manifest(
     title: str, folder_uid: str, parent_uid: str | None = None
@@ -68,11 +70,9 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
     if not parsed.data:
         raise ValueError("input data cannot be empty")
     raw = copy.deepcopy(parsed.data)
-    target_api_version = "rules.alerting.grafana.app/v0alpha1"
+    target_api_version = CANONICAL_ALERT_API_VERSION
     if "spec" in raw and raw.get("kind") == "AlertRule":
         spec: dict[str, Any] = raw["spec"]
-        if str(raw.get("apiVersion", "")).startswith("rules.alerting.grafana.app/"):
-            target_api_version = raw["apiVersion"]
     elif "groups" in raw and raw.get("apiVersion") == 1:
         group = raw["groups"][0]
         rule = group["rules"][0]
@@ -124,6 +124,10 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
             spec["paused"] = True
     else:
         raise ValueError("unsupported alert rule format")
+
+    if "notificationSettings" in spec and isinstance(spec["notificationSettings"], dict):
+        if "receiver" in spec["notificationSettings"] and "type" not in spec["notificationSettings"]:
+            spec["notificationSettings"]["type"] = "SimplifiedRouting"
 
     return {
         "apiVersion": target_api_version,
