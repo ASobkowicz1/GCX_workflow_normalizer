@@ -1,9 +1,0 @@
-apiVersion: folder.grafana.app/v1beta1
-kind: Folder
-metadata:
-  name: f-b85d0ba64d502e88108f
-  annotations:
-    grafana.app/folder: f-2a177fb579c9f7bf55bf
-spec:
-  title: recrule
-  description: ''
