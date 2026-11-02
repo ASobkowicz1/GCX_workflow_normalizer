@@ -109,3 +109,30 @@ pytest -v
    - Dla gałęzi `prd`, `dev`, `tech` włącz regułę ochrony wymagającą status checka `Observability deploy`.
 3. **Uprawnienia workflow (Settings $\rightarrow$ Actions $\rightarrow$ General):**
    - W sekcji *Workflow permissions* upewnij się, że zaznaczona jest opcja **Read and write permissions** (wymagane dla bota i nadawania statusów przez API).
+
+---
+
+## Testy
+
+1. Główny silnik (GitOps PR / merge):
+   # Tryb Plan (normalizacja + walidacja + podsumowanie             
+   Terraform-style)
+   python3 -m normalizer plan --repo-root . --data-dir grafana      
+   --base-ref origin/prd --gcx-bin gcx
+
+   # Tryb Deploy (wdrożenie delty po scaleniu)
+   python3 -m normalizer deploy --repo-root . --data-dir grafana    
+   --base-ref HEAD~1 --target-ref HEAD --gcx-bin gcx
+
+   # Bootstrap / Disaster Recovery (pełny push bez kasowania)       
+   python3 -m normalizer deploy --repo-root . --data-dir grafana    
+   --full-push --gcx-bin gcx
+
+2. Narzędzie audytu driftu (Live Sync):
+   # Audyt driftu (Plan / Dry-Run względem żywej Grafany)           
+   python3 grafana-live-sync/live_sync/cli.py plan --repo-root .    
+   --data-dir grafana --gcx-bin gcx --summary-file plan.md          
+
+   # Naprawa driftu (Deploy / Reconcile)
+   python3 grafana-live-sync/live_sync/cli.py deploy --repo-root .  
+   --data-dir grafana --gcx-bin gcx --summary-file plan.md   
