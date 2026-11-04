@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-MANAGED_UID_PATTERN = re.compile(r"^(f|d|a|r)-[0-9a-f]{20}$")
+from live_sync.paths import MANAGED_UID_PATTERN, is_managed_uid
+
 DURATION_PART_RE = re.compile(r"(\d+)(ns|us|µs|ms|s|m|h|d|w)")
 
 
@@ -17,19 +18,11 @@ DURATION_PART_RE = re.compile(r"(\d+)(ns|us|µs|ms|s|m|h|d|w)")
 class LiveGrafanaResource:
     """Zasób pobrany bezpośrednio z żywego API Grafany."""
 
-    kind: str  # "Folder", "Dashboard", "AlertRule"
+    kind: str  # "Folder", "Dashboard", "AlertRule", "RecordingRule"
     name: str  # metadata.name (UID zasobu, np. d-...)
     title: str
     folder_uid: str | None
     spec: dict[str, Any]
-
-
-def is_managed_uid(name: str) -> bool:
-    """
-    Sprawdza, czy UID zasobu pasuje do naszego deterministycznego formatu `^(f|d|a)-[0-9a-f]{20}$`.
-    Zasoby stworzone ręcznie w UI Grafany mają inny format UID, więc są w 100% chronione przed usunięciem.
-    """
-    return bool(MANAGED_UID_PATTERN.match(name))
 
 
 def _normalize_duration(val: Any) -> str:
@@ -85,8 +78,45 @@ def _strip_empty_and_defaults(obj: Any) -> Any:
         return cleaned_dict
     if isinstance(obj, list):
         cleaned_list = [_strip_empty_and_defaults(item) for item in obj]
-        return [item for item in cleaned_list if item not in (None, "", [], {}) and item is not False]
+        return [
+            item
+            for item in cleaned_list
+            if item not in (None, "", [], {}) and item is not False
+        ]
     return obj
+
+
+def _canonicalize_expressions(raw_exprs: Any) -> dict[str, Any]:
+    """Normalizuje słownik `expressions` dla reguł AlertRule i RecordingRule do porównania stanu."""
+    norm_exprs: dict[str, Any] = {}
+    if not isinstance(raw_exprs, dict):
+        return norm_exprs
+
+    for ref_id, expr_obj in sorted(raw_exprs.items()):
+        if not isinstance(expr_obj, dict):
+            continue
+        model = _strip_empty_and_defaults(expr_obj.get("model", {}))
+        entry: dict[str, Any] = {
+            "model": model,
+            "source": bool(expr_obj.get("source", False)),
+        }
+        ds_uid = expr_obj.get("datasourceUID")
+        if ds_uid and ds_uid != "__expr__":
+            entry["datasourceUID"] = str(ds_uid)
+        q_type = expr_obj.get("queryType")
+        if q_type:
+            entry["queryType"] = str(q_type)
+        rtr = expr_obj.get("relativeTimeRange")
+        if isinstance(rtr, dict):
+            rtr_from = _normalize_duration(rtr.get("from", 0))
+            rtr_to = _normalize_duration(rtr.get("to", 0))
+            if not (rtr_from == "0s" and rtr_to == "0s"):
+                entry["relativeTimeRange"] = {
+                    "from": rtr_from,
+                    "to": rtr_to,
+                }
+        norm_exprs[str(ref_id)] = entry
+    return norm_exprs
 
 
 def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
@@ -113,40 +143,11 @@ def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
         }
 
     if kind == "AlertRule":
-        raw_exprs = cleaned.get("expressions")
-        norm_exprs: dict[str, Any] = {}
-        if isinstance(raw_exprs, dict):
-            for ref_id, expr_obj in sorted(raw_exprs.items()):
-                if not isinstance(expr_obj, dict):
-                    continue
-                model = _strip_empty_and_defaults(expr_obj.get("model", {}))
-                entry: dict[str, Any] = {
-                    "model": model,
-                    "source": bool(expr_obj.get("source", False)),
-                }
-                ds_uid = expr_obj.get("datasourceUID")
-                if ds_uid and ds_uid != "__expr__":
-                    entry["datasourceUID"] = str(ds_uid)
-                q_type = expr_obj.get("queryType")
-                if q_type:
-                    entry["queryType"] = str(q_type)
-                rtr = expr_obj.get("relativeTimeRange")
-                if isinstance(rtr, dict):
-                    rtr_from = _normalize_duration(rtr.get("from", 0))
-                    rtr_to = _normalize_duration(rtr.get("to", 0))
-                    if not (rtr_from == "0s" and rtr_to == "0s"):
-                        entry["relativeTimeRange"] = {
-                            "from": rtr_from,
-                            "to": rtr_to,
-                        }
-                norm_exprs[str(ref_id)] = entry
-
-        trigger = cleaned.get("trigger") if isinstance(cleaned.get("trigger"), dict) else {}
-        notif = (
-            cleaned.get("notificationSettings")
-            if isinstance(cleaned.get("notificationSettings"), dict)
-            else {}
-        )
+        norm_exprs = _canonicalize_expressions(cleaned.get("expressions"))
+        raw_trigger = cleaned.get("trigger")
+        trigger: dict[str, Any] = raw_trigger if isinstance(raw_trigger, dict) else {}
+        raw_notif = cleaned.get("notificationSettings")
+        notif: dict[str, Any] = raw_notif if isinstance(raw_notif, dict) else {}
         norm_notif = _strip_empty_and_defaults(notif)
         if isinstance(norm_notif, dict):
             norm_notif.pop("type", None)
@@ -166,35 +167,9 @@ def canonicalize_spec(kind: str, spec: dict[str, Any]) -> dict[str, Any]:
         }
 
     if kind == "RecordingRule":
-        raw_exprs = cleaned.get("expressions")
-        norm_exprs = {}
-        if isinstance(raw_exprs, dict):
-            for ref_id, expr_obj in sorted(raw_exprs.items()):
-                if not isinstance(expr_obj, dict):
-                    continue
-                model = _strip_empty_and_defaults(expr_obj.get("model", {}))
-                entry: dict[str, Any] = {
-                    "model": model,
-                    "source": bool(expr_obj.get("source", False)),
-                }
-                ds_uid = expr_obj.get("datasourceUID")
-                if ds_uid and ds_uid != "__expr__":
-                    entry["datasourceUID"] = str(ds_uid)
-                q_type = expr_obj.get("queryType")
-                if q_type:
-                    entry["queryType"] = str(q_type)
-                rtr = expr_obj.get("relativeTimeRange")
-                if isinstance(rtr, dict):
-                    rtr_from = _normalize_duration(rtr.get("from", 0))
-                    rtr_to = _normalize_duration(rtr.get("to", 0))
-                    if not (rtr_from == "0s" and rtr_to == "0s"):
-                        entry["relativeTimeRange"] = {
-                            "from": rtr_from,
-                            "to": rtr_to,
-                        }
-                norm_exprs[str(ref_id)] = entry
-
-        trigger = cleaned.get("trigger") if isinstance(cleaned.get("trigger"), dict) else {}
+        norm_exprs = _canonicalize_expressions(cleaned.get("expressions"))
+        raw_trigger = cleaned.get("trigger")
+        trigger = raw_trigger if isinstance(raw_trigger, dict) else {}
         raw_metric = cleaned.get("metric")
         if isinstance(raw_metric, dict):
             metric_str = str(raw_metric.get("metric") or raw_metric.get("name") or "").strip()
@@ -259,16 +234,36 @@ def fetch_live_managed_resources(
             raise RuntimeError(
                 f"gcx binary not found: '{gcx_bin}'. Please specify it explicitly via --gcx-bin (e.g. --gcx-bin gcx)."
             ) from exc
+
+        pulled_files = list(Path(tmp_dir).rglob("*.json"))
         combined_err = f"{proc.stdout}\n{proc.stderr}".lower()
-        if proc.returncode != 0 and any(
-            err in combined_err
-            for err in ("unauthorized", "401", "invalid configuration", "connection refused")
+        fatal_error_keywords = (
+            "unauthorized",
+            "401",
+            "forbidden",
+            "403",
+            "invalid configuration",
+            "connection refused",
+            "no such host",
+            "dial tcp",
+            "timeout",
+            "context deadline exceeded",
+            "bad gateway",
+            "service unavailable",
+        )
+        if proc.returncode != 0 and (
+            any(err in combined_err for err in fatal_error_keywords)
+            or (
+                not pulled_files
+                and "0 resources pulled" not in combined_err
+                and "no resources" not in combined_err
+            )
         ):
             raise RuntimeError(
                 f"GCX connection or authorization error while fetching Grafana state:\n{proc.stderr or proc.stdout}"
             )
 
-        for json_file in Path(tmp_dir).rglob("*.json"):
+        for json_file in pulled_files:
             try:
                 item = json.loads(json_file.read_text(encoding="utf-8"))
             except Exception:
@@ -280,16 +275,19 @@ def fetch_live_managed_resources(
             if kind not in ("Folder", "Dashboard", "AlertRule", "RecordingRule"):
                 continue
 
-            meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            raw_meta = item.get("metadata")
+            meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
             name = str(meta.get("name", ""))
             if not is_managed_uid(name):
                 continue
 
-            annotations = (
-                meta.get("annotations") if isinstance(meta.get("annotations"), dict) else {}
+            raw_annotations = meta.get("annotations")
+            annotations: dict[str, Any] = (
+                raw_annotations if isinstance(raw_annotations, dict) else {}
             )
             folder_uid = annotations.get("grafana.app/folder")
-            spec = item.get("spec") if isinstance(item.get("spec"), dict) else {}
+            raw_spec = item.get("spec")
+            spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
             title = str(spec.get("title", name))
 
             resources[(kind, name)] = LiveGrafanaResource(
@@ -301,3 +299,13 @@ def fetch_live_managed_resources(
             )
 
     return resources
+
+
+__all__ = [
+    "DURATION_PART_RE",
+    "MANAGED_UID_PATTERN",
+    "LiveGrafanaResource",
+    "canonicalize_spec",
+    "fetch_live_managed_resources",
+    "is_managed_uid",
+]

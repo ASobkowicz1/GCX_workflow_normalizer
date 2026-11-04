@@ -1,7 +1,6 @@
 """Dedykowany zestaw testów jednostkowych i integracyjnych dla narzędzia grafana-live-sync (moduł live_sync)."""
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

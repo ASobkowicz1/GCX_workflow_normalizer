@@ -5,6 +5,39 @@ import re
 import unicodedata
 from pathlib import Path
 
+MANAGED_UID_PATTERN = re.compile(r"^(f|d|a|r)-[0-9a-f]{20}$")
+POLISH_TRANSLATION_TABLE = str.maketrans(
+    {
+        "ą": "a",
+        "ć": "c",
+        "ę": "e",
+        "ł": "l",
+        "ń": "n",
+        "ó": "o",
+        "ś": "s",
+        "ź": "z",
+        "ż": "z",
+        "Ą": "a",
+        "Ć": "c",
+        "Ę": "e",
+        "Ł": "l",
+        "Ń": "n",
+        "Ó": "o",
+        "Ś": "s",
+        "Ź": "z",
+        "Ż": "z",
+    }
+)
+SLUG_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
+
+
+def is_managed_uid(name: str) -> bool:
+    """
+    Sprawdza, czy UID zasobu pasuje do naszego deterministycznego formatu `^(f|d|a|r)-[0-9a-f]{20}$`.
+    Zasoby stworzone ręcznie w UI Grafany mają inny format UID, więc są w 100% chronione przed usunięciem.
+    """
+    return bool(MANAGED_UID_PATTERN.match(name))
+
 
 def get_canonical_folder_path(root_path: Path, target_path: Path) -> str | None:
     """
@@ -19,10 +52,7 @@ def get_canonical_folder_path(root_path: Path, target_path: Path) -> str | None:
 
     # Rozpoznajemy czy target_path wskazuje na plik (również gdy plik został już usunięty w git diff)
     known_file_extensions = {".json", ".yaml", ".yml", ".md", ".txt", ".prom", ".tf"}
-    if target_path.exists():
-        is_file = target_path.is_file()
-    else:
-        is_file = target_path.suffix.lower() in known_file_extensions
+    is_file = target_path.is_file() if target_path.exists() else target_path.suffix.lower() in known_file_extensions
 
     folder_path = target_path.parent if is_file else target_path
     if folder_path == root_path or not folder_path.is_relative_to(root_path):
@@ -43,7 +73,7 @@ def get_folder_depth(canonical_folder_path: str | None) -> int:
 
 def generate_uid(prefix: str, canonical_folder_path: str | None, title: str | None = None) -> str:
     """
-    Generuje deterministyczny, 22-znakowy identyfikator UID zasobu (np. f-<20_hex>, d-<20_hex>, a-<20_hex>)
+    Generuje deterministyczny, 22-znakowy identyfikator UID zasobu (np. f-<20_hex>, d-<20_hex>, a-<20_hex>, r-<20_hex>)
     na podstawie kanonicznej ścieżki folderu oraz (opcjonalnie) tytułu zasobu.
     """
     if not canonical_folder_path:
@@ -63,13 +93,13 @@ def slugify_filename(
     Przekształca tytuł zasobu na bezpieczną nazwę pliku (małe litery, bez polskich znaków, słowa oddzielone '-').
     Jeśli podano `prefix` (np. 'd' dla dashboardu lub 'a' dla alertu), dodaje go na początku: `d-<slug>.yaml`.
     """
-    title_lower = title.lower()
+    title_lower = title.lower().translate(POLISH_TRANSLATION_TABLE)
     title_normalized = (
-        unicodedata.normalize("NFKD", title_lower.translate(str.maketrans({"ł": "l", "Ł": "l"})))
+        unicodedata.normalize("NFKD", title_lower)
         .encode("ascii", "ignore")
         .decode("ascii")
     )
-    slug = re.sub(r"[^a-z0-9]+", "-", title_normalized).strip("-")
+    slug = SLUG_CLEANUP_RE.sub("-", title_normalized).strip("-")
     if not slug:
         raise ValueError(f"cannot generate valid filename slug from title: {title!r}")
     if prefix:

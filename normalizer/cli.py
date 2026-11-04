@@ -43,18 +43,24 @@ def _filter_gcx_output(text: str) -> str:
     return "\n".join(filtered_lines)
 
 
+def _normalize_data_prefix(data_dir: str) -> str:
+    """Wyznacza znormalizowany prefiks katalogu danych (np. 'grafana/') do czytelnego skracania ścieżek."""
+    if not data_dir:
+        return ""
+    cleaned = Path(data_dir).as_posix().removeprefix("./").rstrip("/")
+    return f"{cleaned}/" if cleaned and cleaned != "." else ""
+
+
 def _format_command_header(
     cmd: list[str],
     is_apply: bool = False,
     data_dir: str = "",
 ) -> str:
     """Tworzy czytelny nagłówek informujący użytkownika o przetwarzanych plikach/zasobach zamiast surowej komendy CLI."""
-    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    data_prefix = _normalize_data_prefix(data_dir)
     if "validate" in cmd:
         files = [
-            cmd[i + 1].removeprefix(data_prefix)
-            for i in range(len(cmd) - 1)
-            if cmd[i] == "-p"
+            cmd[i + 1].removeprefix(data_prefix) for i in range(len(cmd) - 1) if cmd[i] == "-p"
         ]
         if files:
             lines = ["🔍 Validating resources against Grafana API:"]
@@ -65,9 +71,7 @@ def _format_command_header(
 
     if "push" in cmd:
         files = [
-            cmd[i + 1].removeprefix(data_prefix)
-            for i in range(len(cmd) - 1)
-            if cmd[i] == "-p"
+            cmd[i + 1].removeprefix(data_prefix) for i in range(len(cmd) - 1) if cmd[i] == "-p"
         ]
         if files:
             lines = ["🚀 Pushing resources to Grafana:"]
@@ -78,9 +82,7 @@ def _format_command_header(
 
     if "delete" in cmd:
         selectors = [
-            arg
-            for arg in cmd[1:]
-            if not arg.startswith("-") and arg not in ("resources", "delete")
+            arg for arg in cmd[1:] if not arg.startswith("-") and arg not in ("resources", "delete")
         ]
         if selectors:
             lines = ["🚀 Deleting resources from Grafana:"]
@@ -157,7 +159,7 @@ def _diagnose_batch_failure(
     Uruchamia precyzyjną diagnostykę per-plik, gdy skonsolidowane polecenie (validate lub push) zawiedzie.
     Bada każdy plik z paczki z osobna i zbiera pełną listę wszystkich uszkodzonych zasobów naraz.
     """
-    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    data_prefix = _normalize_data_prefix(data_dir)
     gcx_bin = cmd[0]
     action = "push" if "push" in cmd else "validate"
     files = [cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i] == "-p"]
@@ -318,13 +320,13 @@ def main(argv: list[str] | None = None) -> int:
     """Główny punkt wejścia programu obsługujący argumenty wiersza poleceń."""
     parser = argparse.ArgumentParser(
         prog="normalizer",
-        description="GCX GitOps Normalizer & Terraform-style Delta Planner",
+        description="GCX GitOps normalizer & terraform-style git diff deploy",
     )
     parser.add_argument(
         "mode",
         choices=["plan", "deploy"],
         help=(
-            "plan: normalize files in data/, validate rules and generate diff plan (gcx validate); "
+            "plan: normalize files in grafana/, validate rules and generate diff plan (gcx validate)"
             "deploy: deploy delta changes after merge using normalized files (gcx push / delete)"
         ),
     )
@@ -332,7 +334,9 @@ def main(argv: list[str] | None = None) -> int:
         "--repo-root", type=Path, default=Path(), help="Path to Git repository root"
     )
     parser.add_argument(
-        "--data-dir", default="grafana", help="Subdirectory with Grafana resources (default: grafana)"
+        "--data-dir",
+        default="grafana",
+        help="Subdirectory with Grafana resources (default: grafana)",
     )
     parser.add_argument(
         "--base-ref", default="HEAD", help="Base Git ref for diff comparison (e.g. origin/prd)"
@@ -360,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     data_root = repo_root / args.data_dir
 
     if args.mode == "plan":
-        # 1. Normalizacja plików w katalogu data/
+        # 1. Normalizacja plików w katalogu grafana/
         rec_result = reconcile_data_directory(data_root, dry_run=False)
         # 2. Wyliczenie planu zmian względem base_ref
         plan = build_delta_plan(
@@ -383,9 +387,7 @@ def main(argv: list[str] | None = None) -> int:
                 gcx_bin=args.gcx_bin,
                 dry_run=True,
             )
-            return _execute_commands(
-                commands, repo_root, is_apply=False, data_dir=args.data_dir
-            )
+            return _execute_commands(commands, repo_root, is_apply=False, data_dir=args.data_dir)
         return 0
 
     if args.mode == "deploy":
@@ -407,9 +409,7 @@ def main(argv: list[str] | None = None) -> int:
                 gcx_bin=args.gcx_bin,
                 dry_run=False,
             )
-            return _execute_commands(
-                commands, repo_root, is_apply=True, data_dir=args.data_dir
-            )
+            return _execute_commands(commands, repo_root, is_apply=True, data_dir=args.data_dir)
         return 0
 
     return 0

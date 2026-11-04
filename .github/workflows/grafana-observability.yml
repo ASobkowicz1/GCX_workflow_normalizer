@@ -63,7 +63,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Ręczne uruchomienie z formularza GitHub Actions
             TARGET_ENV="${{ inputs.environment }}"
-            CHECKOUT_REF="${{ github.ref_name }}"
+            CHECKOUT_REF="${{ inputs.environment }}"
             BASE_REF="HEAD~1"
             MODE="deploy"
             FULL_PUSH="${{ inputs.full_push }}"
@@ -264,6 +264,6 @@ jobs:
             --repo-root . \
             --data-dir grafana \
             --base-ref "${BASE_REF}" \
-            --target-ref "${{ github.sha }}" \
+            --target-ref "HEAD" \
             --gcx-bin gcx \
             ${EXTRA_ARGS}

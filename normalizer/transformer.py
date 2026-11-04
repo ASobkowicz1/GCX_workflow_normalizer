@@ -41,11 +41,12 @@ def normalize_dashboard(parsed: ParsedFile, folder_uid: str, dashboard_uid: str)
     if not parsed.data:
         raise ValueError("input data cannot be empty")
     raw = copy.deepcopy(parsed.data)
-    if "spec" in raw:
-        api_version = raw.get("apiVersion", "dashboard.grafana.app/v2")
-        if api_version == "dashboard.grafana.app/v1beta1":
+    raw_spec = raw.get("spec")
+    if isinstance(raw_spec, dict):
+        api_version = str(raw.get("apiVersion", "dashboard.grafana.app/v2"))
+        if api_version in ("dashboard.grafana.app/v0alpha1", "dashboard.grafana.app/v1beta1"):
             api_version = "dashboard.grafana.app/v1"
-        spec = raw["spec"]
+        spec: dict[str, Any] = raw_spec
     else:
         api_version = "dashboard.grafana.app/v1"
         spec = raw
@@ -76,6 +77,42 @@ def normalize_dashboard(parsed: ParsedFile, folder_uid: str, dashboard_uid: str)
     }
 
 
+def _convert_ui_data_to_expressions(
+    data_items: Any,
+    source_ref: str | None = None,
+) -> dict[str, Any]:
+    """
+    Konwertuje tablicę zapytań `data` z eksportu UI Grafany (apiVersion: 1)
+    na słownik `expressions` wymagany przez API k8s (`rules.alerting.grafana.app/v1beta1`).
+    """
+    expressions: dict[str, Any] = {}
+    if not isinstance(data_items, list):
+        return expressions
+
+    for item in data_items:
+        if not isinstance(item, dict) or "refId" not in item:
+            continue
+        ref_id = str(item["refId"])
+        expr_entry: dict[str, Any] = {"model": item.get("model", {})}
+        if item.get("datasourceUid") and item.get("datasourceUid") != "__expr__":
+            expr_entry["datasourceUID"] = item["datasourceUid"]
+        if item.get("queryType"):
+            expr_entry["queryType"] = item["queryType"]
+        rtr = item.get("relativeTimeRange")
+        if isinstance(rtr, dict):
+            # UI eksportuje sekundy jako liczby całkowite (np. 600), a API k8s oczekuje stringów (np. "600s")
+            from_val = rtr.get("from", 0)
+            to_val = rtr.get("to", 0)
+            expr_entry["relativeTimeRange"] = {
+                "from": f"{from_val}s" if isinstance(from_val, int) else str(from_val),
+                "to": f"{to_val}s" if isinstance(to_val, int) else str(to_val),
+            }
+        if source_ref and ref_id == source_ref:
+            expr_entry["source"] = True
+        expressions[ref_id] = expr_entry
+    return expressions
+
+
 def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> dict[str, Any]:
     """
     Przekształca eksport AlertRule z UI Grafany (apiVersion: 1, groups -> rules) lub manifest k8s
@@ -85,35 +122,15 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
         raise ValueError("input data cannot be empty")
     raw = copy.deepcopy(parsed.data)
     target_api_version = CANONICAL_ALERT_API_VERSION
-    if "spec" in raw and raw.get("kind") == "AlertRule":
-        spec: dict[str, Any] = raw["spec"]
-    elif "groups" in raw and raw.get("apiVersion") == 1:
+    raw_spec = raw.get("spec")
+    if isinstance(raw_spec, dict) and raw.get("kind") == "AlertRule":
+        spec: dict[str, Any] = raw_spec
+    elif "groups" in raw and str(raw.get("apiVersion", "")) == "1":
         group = raw["groups"][0]
         rule = group["rules"][0]
         interval = group.get("interval", "1m")
-        expressions: dict[str, Any] = {}
         condition_ref = rule.get("condition")
-
-        # Konwersja tablicy zapytań `data` z eksportu UI na słownik `expressions` wymagany przez API k8s
-        for item in rule.get("data", []):
-            ref_id = item["refId"]
-            expr_entry: dict[str, Any] = {"model": item["model"]}
-            if item.get("datasourceUid") and item.get("datasourceUid") != "__expr__":
-                expr_entry["datasourceUID"] = item["datasourceUid"]
-            if item.get("queryType"):
-                expr_entry["queryType"] = item["queryType"]
-            if "relativeTimeRange" in item:
-                rtr = item["relativeTimeRange"]
-                # UI eksportuje sekundy jako liczby całkowite (np. 600), a API k8s oczekuje stringów (np. "600s")
-                from_val = rtr.get("from", 0)
-                to_val = rtr.get("to", 0)
-                expr_entry["relativeTimeRange"] = {
-                    "from": f"{from_val}s" if isinstance(from_val, int) else str(from_val),
-                    "to": f"{to_val}s" if isinstance(to_val, int) else str(to_val),
-                }
-            if ref_id == condition_ref:
-                expr_entry["source"] = True
-            expressions[ref_id] = expr_entry
+        expressions = _convert_ui_data_to_expressions(rule.get("data", []), source_ref=condition_ref)
 
         spec = {
             "title": rule["title"],
@@ -175,34 +192,21 @@ def normalize_recordingrule(
         raise ValueError("input data cannot be empty")
     raw = copy.deepcopy(parsed.data)
     target_api_version = CANONICAL_ALERT_API_VERSION
-    if "spec" in raw and raw.get("kind") == "RecordingRule":
-        spec: dict[str, Any] = raw["spec"]
-    elif "groups" in raw and raw.get("apiVersion") == 1:
+    raw_spec = raw.get("spec")
+    if isinstance(raw_spec, dict) and raw.get("kind") == "RecordingRule":
+        spec: dict[str, Any] = raw_spec
+    elif "groups" in raw and str(raw.get("apiVersion", "")) == "1":
         group = raw["groups"][0]
         rule = group["rules"][0]
         interval = group.get("interval", "1m")
-        expressions: dict[str, Any] = {}
-        for item in rule.get("data", []):
-            ref_id = item["refId"]
-            expr_entry: dict[str, Any] = {"model": item["model"]}
-            if item.get("datasourceUid") and item.get("datasourceUid") != "__expr__":
-                expr_entry["datasourceUID"] = item["datasourceUid"]
-            if item.get("queryType"):
-                expr_entry["queryType"] = item["queryType"]
-            if "relativeTimeRange" in item:
-                rtr = item["relativeTimeRange"]
-                from_val = rtr.get("from", 0)
-                to_val = rtr.get("to", 0)
-                expr_entry["relativeTimeRange"] = {
-                    "from": f"{from_val}s" if isinstance(from_val, int) else str(from_val),
-                    "to": f"{to_val}s" if isinstance(to_val, int) else str(to_val),
-                }
-            expressions[ref_id] = expr_entry
+        expressions = _convert_ui_data_to_expressions(rule.get("data", []))
 
-        rec_obj = (
-            rule.get("record")
-            if isinstance(rule.get("record"), dict)
-            else (rule.get("metric") if isinstance(rule.get("metric"), dict) else {})
+        raw_record = rule.get("record")
+        raw_metric_field = rule.get("metric")
+        rec_obj: dict[str, Any] = (
+            raw_record
+            if isinstance(raw_record, dict)
+            else (raw_metric_field if isinstance(raw_metric_field, dict) else {})
         )
         target_ds_rule = (
             rule.get("targetDatasourceUid")

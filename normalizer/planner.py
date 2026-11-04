@@ -14,7 +14,7 @@ from normalizer.models import (
     ValidationIssue,
 )
 from normalizer.parser import detect_and_parse
-from normalizer.paths import get_canonical_folder_path, get_folder_depth
+from normalizer.paths import get_canonical_folder_path, get_folder_depth, is_managed_uid
 
 # Stały identyfikator pustego drzewa w Git (używany gdy github.event.before to 40 zer lub brak rodzica)
 GIT_EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -66,9 +66,11 @@ def _resolve_effective_base_ref(
 def _extract_resource_metadata(data: dict[str, Any], fallback_path: Path) -> tuple[str, str, str]:
     """Wyciąga trójkę (kind, metadata.name, spec.title) z kanonicznego słownika zasobu."""
     kind = str(data.get("kind", "Unknown"))
-    meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    raw_meta = data.get("metadata")
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
     name = str(meta.get("name", fallback_path.stem))
-    spec = data.get("spec") if isinstance(data.get("spec"), dict) else {}
+    raw_spec = data.get("spec")
+    spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
     title = str(spec.get("title", fallback_path.stem))
     return kind, name, title
 
@@ -198,6 +200,18 @@ def build_delta_plan(
                 continue
 
             kind, name, title = _extract_resource_metadata(old_data, abs_path)
+            raw_old_meta = old_data.get("metadata")
+            old_meta: dict[str, Any] = raw_old_meta if isinstance(raw_old_meta, dict) else {}
+            has_server_fields = (
+                any(
+                    k in old_meta
+                    for k in ("uid", "resourceVersion", "generation", "managedFields")
+                )
+                or "status" in old_data
+            )
+            if not is_managed_uid(name) or has_server_fields:
+                continue
+
             plan.items.append(
                 PlanItem(
                     action=PlanActionType.DESTROY,

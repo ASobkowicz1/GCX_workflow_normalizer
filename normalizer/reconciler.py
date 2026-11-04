@@ -1,5 +1,6 @@
 """Moduł uzgadniający stan katalogu `data/`: normalizacja plików do `d-*.yaml` / `a-*.yaml` oraz budowa `folder.yaml`."""
 
+import contextlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,7 +60,7 @@ def _expand_parsed_file_to_candidates(
     if (
         parsed.kind in (FileKind.RAW_UI_ALERTRULE, FileKind.RAW_UI_RECORDINGRULE)
         and parsed.data
-        and parsed.data.get("apiVersion") == 1
+        and str(parsed.data.get("apiVersion", "")) == "1"
     ):
         candidates: list[_CandidateResource] = []
         for group in parsed.data.get("groups", []):
@@ -72,16 +73,10 @@ def _expand_parsed_file_to_candidates(
                 rule_title = rule.get("title")
                 if not rule_title or not isinstance(rule_title, str):
                     if is_rec:
-                        rec_val = (
-                            rule.get("record")
-                            if "record" in rule
-                            else rule.get("metric")
-                        )
+                        rec_val = rule.get("record") if "record" in rule else rule.get("metric")
                         if isinstance(rec_val, dict):
                             rule_title = (
-                                rec_val.get("metric")
-                                or rec_val.get("name")
-                                or "recording-rule"
+                                rec_val.get("metric") or rec_val.get("name") or "recording-rule"
                             )
                         elif isinstance(rec_val, str) and rec_val:
                             rule_title = rec_val
@@ -295,7 +290,9 @@ def reconcile_data_directory(
                 continue
 
             # Sprawdzenie czy użytkownik nie wyeksportował dashboardu z opcją "Export for sharing externally" (__inputs)
-            if parsed.data and "__inputs" in parsed.data:
+            raw_spec_val = parsed.data.get("spec") if parsed.data else None
+            raw_spec: dict[str, Any] = raw_spec_val if isinstance(raw_spec_val, dict) else {}
+            if parsed.data and ("__inputs" in parsed.data or "__inputs" in raw_spec):
                 result.issues.append(
                     ValidationIssue(
                         path=f,
@@ -404,9 +401,7 @@ def reconcile_data_directory(
                     folder_manifest_path.unlink()
                 result.deleted_empty_folders.append(folder_manifest_path)
             if not dry_run and folder_dir.exists():
-                try:
+                with contextlib.suppress(OSError):
                     folder_dir.rmdir()
-                except OSError:
-                    pass
 
     return result

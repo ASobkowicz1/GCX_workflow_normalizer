@@ -1,4 +1,4 @@
-"""Interfejs linii poleceń (CLI) obsługujący dwa tryby pracy: plan (normalizacja + walidacja) oraz deploy (wdrożenie zmian)."""
+"""Interfejs linii poleceń (CLI) obsługujący dwa tryby pracy: plan (normalizacja + walidacja dryfu) oraz deploy (wdrożenie zmian)."""
 
 import argparse
 import os
@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 # Umożliwia uruchomienie skryptu bezpośrednio (`python3 grafana-live-sync/live_sync/cli.py`)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from live_sync.grafana_state import fetch_live_managed_resources
 from live_sync.planner import (
@@ -44,13 +45,21 @@ def _filter_gcx_output(text: str) -> str:
     return "\n".join(filtered_lines)
 
 
+def _normalize_data_prefix(data_dir: str) -> str:
+    """Wyznacza znormalizowany prefiks katalogu danych (np. 'grafana/') do czytelnego skracania ścieżek."""
+    if not data_dir:
+        return ""
+    cleaned = Path(data_dir).as_posix().removeprefix("./").rstrip("/")
+    return f"{cleaned}/" if cleaned and cleaned != "." else ""
+
+
 def _format_command_header(
     cmd: list[str],
     is_apply: bool = False,
     data_dir: str = "",
 ) -> str:
     """Tworzy czytelny nagłówek informujący użytkownika o przetwarzanych plikach/zasobach zamiast surowej komendy CLI."""
-    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    data_prefix = _normalize_data_prefix(data_dir)
     if "validate" in cmd:
         files = [
             cmd[i + 1].removeprefix(data_prefix)
@@ -158,7 +167,7 @@ def _diagnose_batch_failure(
     Uruchamia precyzyjną diagnostykę per-plik, gdy skonsolidowane polecenie (validate lub push) zawiedzie.
     Bada każdy plik z paczki z osobna i zbiera pełną listę wszystkich uszkodzonych zasobów naraz.
     """
-    data_prefix = f"{data_dir.strip('./')}/" if data_dir else ""
+    data_prefix = _normalize_data_prefix(data_dir)
     gcx_bin = cmd[0]
     action = "push" if "push" in cmd else "validate"
     files = [cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i] == "-p"]
@@ -347,64 +356,39 @@ def main(argv: list[str] | None = None) -> int:
     data_root = repo_root / args.data_dir
     gcx_bin = args.gcx_bin
 
+    # 1. Walidacja i normalizacja lokalnego katalogu zasobów przed odpytaniem API Grafany
+    rec_result = reconcile_data_directory(data_root, dry_run=False)
+
     print("## Fetching live resources state from Grafana...")
     try:
         live_resources = fetch_live_managed_resources(gcx_bin=gcx_bin)
     except RuntimeError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
-    print(f"## Found {len(live_resources)} repository managed resources (f-/d-/a-) in Grafana.\n")
+    print(f"## Found {len(live_resources)} repository managed resources (f-/d-/a-/r-) in Grafana.\n")
 
-    if args.mode == "plan":
-        rec_result = reconcile_data_directory(data_root)
-        plan = build_live_state_plan(
-            repo_root=repo_root,
-            live_resources=live_resources,
-            data_subdir=args.data_dir,
-            issues=rec_result.issues,
+    is_apply = args.mode == "deploy"
+    plan = build_live_state_plan(
+        repo_root=repo_root,
+        live_resources=live_resources,
+        data_subdir=args.data_dir,
+        issues=rec_result.issues,
+    )
+    summary_md = format_terraform_summary(plan, is_apply=is_apply)
+    _write_summary(summary_md, args.summary_file)
+
+    if plan.has_errors:
+        return 1
+
+    if not args.skip_gcx and plan.items:
+        commands = build_gcx_delta_commands(
+            plan,
+            gcx_bin=gcx_bin,
+            dry_run=not is_apply,
         )
-        summary_md = format_terraform_summary(plan, is_apply=False)
-        _write_summary(summary_md, args.summary_file)
-
-        if plan.has_errors:
-            return 1
-
-        if not args.skip_gcx and plan.items:
-            commands = build_gcx_delta_commands(
-                plan,
-                gcx_bin=gcx_bin,
-                dry_run=True,
-            )
-            return _execute_commands(
-                commands, repo_root, is_apply=False, data_dir=args.data_dir
-            )
-        return 0
-
-    if args.mode == "deploy":
-        rec_result = reconcile_data_directory(data_root)
-        plan = build_live_state_plan(
-            repo_root=repo_root,
-            live_resources=live_resources,
-            data_subdir=args.data_dir,
-            issues=rec_result.issues,
+        return _execute_commands(
+            commands, repo_root, is_apply=is_apply, data_dir=args.data_dir
         )
-        summary_md = format_terraform_summary(plan, is_apply=True)
-        _write_summary(summary_md, args.summary_file)
-
-        if plan.has_errors:
-            return 1
-
-        if not args.skip_gcx and plan.items:
-            commands = build_gcx_delta_commands(
-                plan,
-                gcx_bin=gcx_bin,
-                dry_run=False,
-            )
-            return _execute_commands(
-                commands, repo_root, is_apply=True, data_dir=args.data_dir
-            )
-        return 0
-
     return 0
 
 

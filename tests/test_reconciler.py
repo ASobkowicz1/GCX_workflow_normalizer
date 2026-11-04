@@ -337,6 +337,7 @@ def test_mixed_alert_and_recording_rules_group_export_split_into_individual_file
 def test_reconcile_migrates_alert_and_recording_rules_to_new_api_version(tmp_path: Path) -> None:
     """Sprawdza, czy po zmianie CANONICAL_ALERT_API_VERSION istniejące kanoniczne pliki v0alpha1 są aktualizowane do v1beta1."""
     from unittest.mock import patch
+
     from normalizer.paths import generate_uid
 
     folder = tmp_path / "PRD - Applications"

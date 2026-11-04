@@ -3,13 +3,11 @@
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import yaml
 
-from unittest.mock import MagicMock, patch
-
 from normalizer.cli import (
-    _diagnose_batch_failure,
     _execute_commands,
     _extract_error_detail,
     _filter_gcx_output,
@@ -735,4 +733,134 @@ def test_unslugifiable_title_handles_gracefully_with_validation_issue(tmp_path: 
     res = reconcile_data_directory(tmp_path)
     assert res.has_errors
     assert any("cannot be converted to filename" in issue.message for issue in res.issues)
+
+
+def test_alert_export_with_string_apiversion_and_null_relative_time_range(tmp_path: Path) -> None:
+    """
+    Sprawdza odporność na:
+    1. `apiVersion: "1"` zapisane jako string w YAML-u.
+    2. Wielogrupowy eksport, w którym pierwsza grupa jest pusta (`rules: []`), a druga zawiera regułę.
+    3. Pole `relativeTimeRange: null` (None) w zapytaniach wyrażeń (`__expr__`).
+    """
+    folder = tmp_path / "PRD" / "Alerts"
+    folder.mkdir(parents=True)
+
+    export_data = {
+        "apiVersion": "1",
+        "groups": [
+            {"name": "empty-group", "interval": "1m", "rules": []},
+            {
+                "name": "real-group",
+                "interval": "1m",
+                "rules": [
+                    {
+                        "title": "String ApiVersion Alert",
+                        "condition": "B",
+                        "data": [
+                            {
+                                "refId": "A",
+                                "datasourceUid": "prom-1",
+                                "relativeTimeRange": {"from": 600, "to": 0},
+                                "model": {"expr": "up == 0"},
+                            },
+                            {
+                                "refId": "B",
+                                "datasourceUid": "__expr__",
+                                "relativeTimeRange": None,
+                                "model": {"type": "threshold"},
+                            },
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+    raw_path = folder / "raw-string-ver.yaml"
+    raw_path.write_text(yaml.safe_dump(export_data), encoding="utf-8")
+
+    res = reconcile_data_directory(tmp_path)
+    assert not res.has_errors
+    assert not raw_path.exists()
+
+    canonical_alert = folder / "a-string-apiversion-alert.yaml"
+    assert canonical_alert.exists()
+    content = yaml.safe_load(canonical_alert.read_text(encoding="utf-8"))
+    assert content["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
+    assert "relativeTimeRange" not in content["spec"]["expressions"]["B"]
+    assert content["spec"]["expressions"]["B"]["source"] is True
+
+
+def test_null_spec_in_yaml_does_not_crash_parser(tmp_path: Path) -> None:
+    """Sprawdza, że plik YAML z `spec: null` nie powoduje AttributeError, lecz zwraca czytelny błąd walidacji."""
+    bad_file = tmp_path / "null-spec.yaml"
+    bad_file.write_text(
+        "apiVersion: dashboard.grafana.app/v2\nkind: Dashboard\nmetadata:\n  name: test\nspec: null\n",
+        encoding="utf-8",
+    )
+    parsed = detect_and_parse(bad_file)
+    assert parsed.kind == FileKind.INVALID
+
+
+def test_k8s_dashboard_with_inputs_inside_spec_rejected(tmp_path: Path) -> None:
+    """Sprawdza, że `__inputs` zagnieżdżone wewnątrz `spec` (eksport k8s z opcją external sharing) jest blokowane."""
+    folder = tmp_path / "PRD"
+    folder.mkdir()
+
+    raw_k8s = {
+        "apiVersion": "dashboard.grafana.app/v1beta1",
+        "kind": "Dashboard",
+        "metadata": {"name": "ext-shared"},
+        "spec": {
+            "title": "Shared Dash",
+            "__inputs": [{"name": "DS_PROMETHEUS"}],
+            "panels": [],
+        },
+    }
+    (folder / "shared.yaml").write_text(yaml.safe_dump(raw_k8s), encoding="utf-8")
+
+    res = reconcile_data_directory(tmp_path)
+    assert res.has_errors
+    assert any("Export for sharing externally" in i.message for i in res.issues)
+
+
+def test_deleted_unmanaged_raw_manifest_is_not_scheduled_for_destroy(tmp_path: Path) -> None:
+    """
+    Sprawdza, że usunięcie z Gita surowego (nieznormalizowanego) pliku YAML z obcym `metadata.name`
+    NIE powoduje wygenerowania akcji DESTROY dla niezarządzanego UID w Grafanie.
+    """
+    repo = tmp_path / "repo"
+    data_dir = repo / "data" / "PRD"
+    data_dir.mkdir(parents=True)
+
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+
+    raw_k8s_dash = {
+        "apiVersion": "dashboard.grafana.app/v2",
+        "kind": "Dashboard",
+        "metadata": {
+            "name": "legacy-manual-uid-999",
+            "uid": "legacy-manual-uid-999",
+        },
+        "spec": {
+            "title": "Manual Dash",
+            "elements": {},
+        },
+    }
+    raw_file = data_dir / "raw-manual.yaml"
+    raw_file.write_text(yaml.safe_dump(raw_k8s_dash), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Accidentally committed raw file")
+
+    # Teraz uruchamiamy normalizator, który zamienia raw-manual.yaml na kanoniczny d-manual-dash.yaml
+    reconcile_data_directory(repo / "data")
+    assert not raw_file.exists()
+    assert (data_dir / "d-manual-dash.yaml").exists()
+
+    plan = build_delta_plan(repo, data_subdir="data", base_ref="HEAD")
+    # Plan nie może zawierać DESTROY dla 'legacy-manual-uid-999'!
+    assert all(item.name != "legacy-manual-uid-999" for item in plan.items)
+    assert len(plan.to_destroy) == 0
+
 

@@ -13,6 +13,7 @@ from live_sync.models import (
 )
 from live_sync.parser import detect_and_parse
 from live_sync.paths import get_canonical_folder_path, get_folder_depth
+from live_sync.reconciler import MAX_GRAFANA_FOLDER_DEPTH
 
 
 def _extract_local_resource(
@@ -20,11 +21,14 @@ def _extract_local_resource(
 ) -> tuple[str, str, str, str | None, dict[str, Any]]:
     """Wyciąga (kind, name, title, folder_uid, canonical_spec) z kanonicznego pliku YAML z `data/`."""
     kind = str(data.get("kind", "Unknown"))
-    meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    raw_meta = data.get("metadata")
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
     name = str(meta.get("name", fallback_path.stem))
-    annotations = meta.get("annotations") if isinstance(meta.get("annotations"), dict) else {}
+    raw_annotations = meta.get("annotations")
+    annotations: dict[str, Any] = raw_annotations if isinstance(raw_annotations, dict) else {}
     folder_uid = annotations.get("grafana.app/folder")
-    spec = data.get("spec") if isinstance(data.get("spec"), dict) else {}
+    raw_spec = data.get("spec")
+    spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
     title = str(spec.get("title", fallback_path.stem))
     return kind, name, title, folder_uid, canonicalize_spec(kind, spec)
 
@@ -78,7 +82,7 @@ def build_live_state_plan(
     1. Zasób jest w `data/`, a nie ma go w Grafanie -> `+ CREATE` (również gdy ktoś skasował go ręcznie w UI).
     2. Zasób jest w `data/` i w Grafanie, ale różni się `spec` lub folder nadrzędny -> `~ UPDATE` (wykrywa też drift w UI).
     3. Zasób jest w `data/` i w Grafanie, a `spec` jest identyczny -> pomijamy (brak zmian).
-    4. Zasobu nie ma w `data/`, a jest w Grafanie (i ma nasz deterministyczny UID `f-/d-/a-`) -> `- DESTROY`.
+    4. Zasobu nie ma w `data/`, a jest w Grafanie (i ma nasz deterministyczny UID `f-/d-/a-/r-`) -> `- DESTROY`.
     """
     repo_root = repo_root.resolve()
     data_root = (repo_root / data_subdir).resolve()
@@ -95,7 +99,7 @@ def build_live_state_plan(
             if canonical_folder is None:
                 continue
             depth = get_folder_depth(canonical_folder)
-            if depth > 4:
+            if depth > MAX_GRAFANA_FOLDER_DEPTH:
                 continue
 
             parsed = detect_and_parse(abs_path)

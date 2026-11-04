@@ -1,7 +1,7 @@
 [project]
 name = "gcx-workflow-normalizer"
 version = "0.1.0"
-description = "Add your description here"
+description = "GitOps normalizer, validator and Terraform-style delta/live-sync engine for Grafana Cloud (GCX)"
 readme = "README.md"
 authors = [
     { name = "Adam Sobkowicz", email = "adamsobkowicz0@gmail.com" }
@@ -25,14 +25,17 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
 # E = pycodestyle errors, F = pyflakes, I = isort, B = bugbear, UP = pyupgrade, SIM = simplify, PTH = wymuszanie pathlib zamiast os.path!
 select = ["E", "F", "I", "B", "UP", "SIM", "PTH"]
-ignore = ["W291", "W292", "W293"]
+ignore = ["E501", "W291", "W292", "W293"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["normalizer", "live_sync"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "grafana-live-sync"]

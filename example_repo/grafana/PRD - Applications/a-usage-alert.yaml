@@ -32,7 +32,7 @@ spec:
         conditions:
         - evaluator:
             params:
-            - 2
+            - 4
             type: gt
           operator:
             type: and

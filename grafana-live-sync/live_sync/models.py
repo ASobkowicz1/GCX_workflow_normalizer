@@ -57,11 +57,11 @@ class ValidationIssue:
 
 @dataclass
 class PlanItem:
-    """Pojedynczy element planu zmian wyliczony z porównania katalogu data/ ze stanem żywej Grafany."""
+    """Pojedynczy element planu zmian wyliczony na podstawie porównania stanu."""
 
     action: PlanActionType
-    kind: str  # "Folder", "Dashboard", "AlertRule"
-    name: str  # metadata.name (deterministyczny UID zasobu w GCX: f-..., d-..., a-...)
+    kind: str  # "Folder", "Dashboard", "AlertRule", "RecordingRule"
+    name: str  # metadata.name (deterministyczny UID zasobu w GCX: f-..., d-..., a-..., r-...)
     title: str
     canonical_folder: str
     repo_path: Path
