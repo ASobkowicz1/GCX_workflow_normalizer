@@ -5,7 +5,7 @@ from typing import Any
 
 from normalizer.models import ParsedFile
 
-CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v0alpha1"
+CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v1beta1"
 
 
 def build_folder_manifest(
@@ -77,7 +77,7 @@ def normalize_dashboard(parsed: ParsedFile, folder_uid: str, dashboard_uid: str)
 def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> dict[str, Any]:
     """
     Przekształca eksport AlertRule z UI Grafany (apiVersion: 1, groups -> rules) lub manifest k8s
-    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v0alpha1`).
+    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v1beta1`).
     """
     if not parsed.data:
         raise ValueError("input data cannot be empty")
@@ -167,7 +167,7 @@ def normalize_recordingrule(
 ) -> dict[str, Any]:
     """
     Normalizuje surowy eksport RecordingRule lub plik pobrany z UI
-    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v0alpha1`).
+    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v1beta1`).
     """
     if not parsed.data:
         raise ValueError("input data cannot be empty")

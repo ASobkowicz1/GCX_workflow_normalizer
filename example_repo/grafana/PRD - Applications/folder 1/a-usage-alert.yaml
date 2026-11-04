@@ -1,4 +1,4 @@
-apiVersion: rules.alerting.grafana.app/v0alpha1
+apiVersion: rules.alerting.grafana.app/v1beta1
 kind: AlertRule
 metadata:
   name: a-d768d16b6a6e6cfb0eda

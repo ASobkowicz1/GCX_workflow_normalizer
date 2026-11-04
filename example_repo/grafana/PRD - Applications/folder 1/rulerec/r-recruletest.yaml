@@ -1,4 +1,4 @@
-apiVersion: rules.alerting.grafana.app/v0alpha1
+apiVersion: rules.alerting.grafana.app/v1beta1
 kind: RecordingRule
 metadata:
   name: r-5754b6d2f20b3a752da4

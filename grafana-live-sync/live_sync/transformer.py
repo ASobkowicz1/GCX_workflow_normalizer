@@ -5,7 +5,7 @@ from typing import Any
 
 from live_sync.models import ParsedFile
 
-CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v0alpha1"
+CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v1beta1"
 
 
 def build_folder_manifest(
@@ -153,7 +153,7 @@ def normalize_recordingrule(
 ) -> dict[str, Any]:
     """
     Normalizuje surowy eksport RecordingRule lub plik pobrany z UI
-    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v0alpha1`).
+    do kanonicznego formatu GCX (`rules.alerting.grafana.app/v1beta1`).
     """
     if not parsed.data:
         raise ValueError("input data cannot be empty")
