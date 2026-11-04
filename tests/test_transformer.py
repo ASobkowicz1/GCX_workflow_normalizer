@@ -13,7 +13,7 @@ from normalizer.transformer import (
 
 def test_build_folder_manifest_root_and_nested() -> None:
     root_folder = build_folder_manifest("PRD - Infrastructure", "f-11111111111111111111")
-    assert root_folder["apiVersion"] == "folder.grafana.app/v1beta1"
+    assert root_folder["apiVersion"] == "folder.grafana.app/v1"
     assert root_folder["kind"] == "Folder"
     assert root_folder["metadata"] == {"name": "f-11111111111111111111"}
     assert root_folder["spec"]["title"] == "PRD - Infrastructure"
@@ -72,11 +72,33 @@ def test_normalize_dashboard_classic_v1(tmp_path: Path) -> None:
         dashboard_uid="d-09876543210987654321",
     )
 
-    assert result["apiVersion"] == "dashboard.grafana.app/v1beta1"
+    assert result["apiVersion"] == "dashboard.grafana.app/v1"
     assert result["metadata"]["name"] == "d-09876543210987654321"
     for stripped in ("id", "uid", "version", "folderUid", "__inputs"):
         assert stripped not in result["spec"]
     assert result["spec"]["title"] == "Classic Dash"
+
+
+def test_normalize_dashboard_v1beta1_migrates_to_v1(tmp_path: Path) -> None:
+    parsed = ParsedFile(
+        path=tmp_path / "v1beta1.yaml",
+        kind=FileKind.CANONICAL_DASHBOARD,
+        title="GreenKube Dash",
+        data={
+            "apiVersion": "dashboard.grafana.app/v1beta1",
+            "kind": "Dashboard",
+            "metadata": {"name": "d-74f0077a206555d2f470"},
+            "spec": {"title": "GreenKube Dash", "panels": []},
+        },
+    )
+    result = normalize_dashboard(
+        parsed,
+        folder_uid="f-11111111111111111111",
+        dashboard_uid="d-74f0077a206555d2f470",
+    )
+    assert result["apiVersion"] == "dashboard.grafana.app/v1"
+    assert result["spec"]["title"] == "GreenKube Dash"
+
 
 
 def test_normalize_alertrule_from_example_repo() -> None:

@@ -11,9 +11,9 @@ CANONICAL_ALERT_API_VERSION = "rules.alerting.grafana.app/v1beta1"
 def build_folder_manifest(
     title: str, folder_uid: str, parent_uid: str | None = None
 ) -> dict[str, Any]:
-    """Buduje kanoniczny manifest Folderu (folder.grafana.app/v1beta1)."""
+    """Buduje kanoniczny manifest Folderu (folder.grafana.app/v1)."""
     body: dict[str, Any] = {
-        "apiVersion": "folder.grafana.app/v1beta1",
+        "apiVersion": "folder.grafana.app/v1",
         "kind": "Folder",
         "metadata": {
             "name": folder_uid,
@@ -35,9 +35,11 @@ def normalize_dashboard(parsed: ParsedFile, folder_uid: str, dashboard_uid: str)
     raw = copy.deepcopy(parsed.data)
     if "spec" in raw:
         api_version = raw.get("apiVersion", "dashboard.grafana.app/v2")
+        if api_version == "dashboard.grafana.app/v1beta1":
+            api_version = "dashboard.grafana.app/v1"
         spec = raw["spec"]
     else:
-        api_version = "dashboard.grafana.app/v1beta1"
+        api_version = "dashboard.grafana.app/v1"
         spec = raw
 
     for field in (

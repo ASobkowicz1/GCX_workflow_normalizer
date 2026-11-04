@@ -1,4 +1,4 @@
-apiVersion: folder.grafana.app/v1beta1
+apiVersion: folder.grafana.app/v1
 kind: Folder
 metadata:
   name: f-d8f2bfb1ae11685dc4a7

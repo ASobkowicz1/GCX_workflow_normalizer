@@ -71,7 +71,7 @@ def test_detect_canonical_dashboard(tmp_path: Path) -> None:
 def test_detect_canonical_folder(tmp_path: Path) -> None:
     folder_file = tmp_path / "folder.yaml"
     manifest = {
-        "apiVersion": "folder.grafana.app/v1beta1",
+        "apiVersion": "folder.grafana.app/v1",
         "kind": "Folder",
         "metadata": {"name": "f-abcdef1234567890abcd"},
         "spec": {"title": "PRD - Applications", "description": ""},
