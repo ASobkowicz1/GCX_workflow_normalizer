@@ -15,7 +15,6 @@ build/
 dist/
 wheels/
 *.egg-info
-pyproject.toml 
 uv.lock
 .vscode/
 .python-version

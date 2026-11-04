@@ -287,7 +287,10 @@ def build_gcx_delta_commands(
 
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:
-        selectors = [f"{kind_to_plural[i.kind]}/{i.name}" for i in resource_destroys]
+        selectors = [
+            f"{kind_to_plural.get(i.kind, f'{i.kind.lower()}s')}/{i.name}"
+            for i in resource_destroys
+        ]
         cmd = [gcx_bin, "resources", "delete", *selectors, "-y"]
         commands.append(cmd)
 

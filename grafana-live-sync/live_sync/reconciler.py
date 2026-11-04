@@ -112,7 +112,17 @@ def _expand_parsed_file_to_candidates(
                     title=rule_title,
                 )
                 prefix = "r" if is_rec else "a"
-                target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
+                try:
+                    target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
+                except ValueError as err:
+                    issues.append(
+                        ValidationIssue(
+                            path=parsed.path,
+                            severity=IssueSeverity.ERROR,
+                            message=f"Rule title {rule_title!r} cannot be converted to filename: {err}",
+                        )
+                    )
+                    continue
                 candidates.append(
                     _CandidateResource(
                         source_file=single_parsed,
@@ -147,7 +157,17 @@ def _expand_parsed_file_to_candidates(
         file_prefix = "r"
     else:
         file_prefix = "d"
-    target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
+    try:
+        target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
+    except ValueError as err:
+        issues.append(
+            ValidationIssue(
+                path=parsed.path,
+                severity=IssueSeverity.ERROR,
+                message=f"Resource title {title!r} cannot be converted to filename: {err}",
+            )
+        )
+        return []
     is_raw = parsed.kind in (
         FileKind.RAW_UI_DASHBOARD,
         FileKind.RAW_UI_ALERTRULE,
@@ -270,17 +290,15 @@ def reconcile_data_directory(data_root: Path, dry_run: bool = False) -> Reconcil
         if not root_file.is_file():
             continue
         parsed = detect_and_parse(root_file)
-        if parsed.kind in (
-            FileKind.CANONICAL_DASHBOARD,
-            FileKind.CANONICAL_ALERTRULE,
-            FileKind.RAW_UI_DASHBOARD,
-            FileKind.RAW_UI_ALERTRULE,
-        ):
+        if parsed.kind not in (FileKind.IGNORED,):
             result.issues.append(
                 ValidationIssue(
                     path=root_file,
-                    severity=IssueSeverity.ERROR,
-                    message="Dashboards and Alert Rules cannot be placed directly in root data/ directory. Place them in a folder.",
+                    severity=IssueSeverity.WARNING,
+                    message=(
+                        f"Resource file '{root_file.name}' is placed directly in root '{data_root.name}/' "
+                        "outside any Grafana folder. Move it into a root subfolder."
+                    ),
                 )
             )
 

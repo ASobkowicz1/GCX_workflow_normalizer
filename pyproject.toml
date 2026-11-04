@@ -1,0 +1,38 @@
+[project]
+name = "gcx-workflow-normalizer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Adam Sobkowicz", email = "adamsobkowicz0@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+normalizer = "normalizer.cli:main"
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+    "types-pyyaml>=6.0.12.20260906",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E = pycodestyle errors, F = pyflakes, I = isort, B = bugbear, UP = pyupgrade, SIM = simplify, PTH = wymuszanie pathlib zamiast os.path!
+select = ["E", "F", "I", "B", "UP", "SIM", "PTH"]
+ignore = ["W291", "W292", "W293"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

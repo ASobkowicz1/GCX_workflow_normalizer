@@ -139,12 +139,15 @@ def normalize_alertrule(parsed: ParsedFile, folder_uid: str, alert_uid: str) -> 
     else:
         raise ValueError("unsupported alert rule format")
 
-    if "notificationSettings" in spec and isinstance(spec["notificationSettings"], dict):
-        if (
+    if (
+        "notificationSettings" in spec
+        and isinstance(spec["notificationSettings"], dict)
+        and (
             "receiver" in spec["notificationSettings"]
             and "type" not in spec["notificationSettings"]
-        ):
-            spec["notificationSettings"]["type"] = "SimplifiedRouting"
+        )
+    ):
+        spec["notificationSettings"]["type"] = "SimplifiedRouting"
 
     return {
         "apiVersion": target_api_version,

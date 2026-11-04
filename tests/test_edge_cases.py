@@ -722,3 +722,17 @@ def test_delete_reports_real_failure_when_resource_exists(capsys) -> None:
     assert "Deletion failed – 1 resource(s) could not be deleted:" in captured.out
     assert "folders/f-active" in captured.out
     assert "Folder could not be deleted" in captured.out
+
+
+def test_unslugifiable_title_handles_gracefully_with_validation_issue(tmp_path: Path) -> None:
+    """Sprawdza, że zasób z tytułem zawierającym wyłącznie symbole/emotikony (brak liter/cyfr) nie powoduje unhandled crash."""
+    folder = tmp_path / "PRD - Apps"
+    folder.mkdir()
+
+    dash = folder / "emoji_dash.json"
+    dash.write_text(json.dumps({"title": "🚀🚀🚀", "schemaVersion": 39, "panels": []}), encoding="utf-8")
+
+    res = reconcile_data_directory(tmp_path)
+    assert res.has_errors
+    assert any("cannot be converted to filename" in issue.message for issue in res.issues)
+

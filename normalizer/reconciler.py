@@ -116,7 +116,17 @@ def _expand_parsed_file_to_candidates(
                     title=rule_title,
                 )
                 prefix = "r" if is_rec else "a"
-                target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
+                try:
+                    target_name = slugify_filename(rule_title, ".yaml", prefix=prefix)
+                except ValueError as err:
+                    issues.append(
+                        ValidationIssue(
+                            path=parsed.path,
+                            severity=IssueSeverity.ERROR,
+                            message=f"Rule title {rule_title!r} cannot be converted to filename: {err}",
+                        )
+                    )
+                    continue
                 candidates.append(
                     _CandidateResource(
                         source_file=single_parsed,
@@ -151,7 +161,17 @@ def _expand_parsed_file_to_candidates(
         file_prefix = "r"
     else:
         file_prefix = "d"
-    target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
+    try:
+        target_name = slugify_filename(title, ".yaml", prefix=file_prefix)
+    except ValueError as err:
+        issues.append(
+            ValidationIssue(
+                path=parsed.path,
+                severity=IssueSeverity.ERROR,
+                message=f"Resource title {title!r} cannot be converted to filename: {err}",
+            )
+        )
+        return []
     is_raw = parsed.kind in (
         FileKind.RAW_UI_DASHBOARD,
         FileKind.RAW_UI_ALERTRULE,
@@ -304,7 +324,7 @@ def reconcile_data_directory(
                 # Aktualizacja: 1 istniejący plik kanoniczny + 1 nowy surowy eksport o tym samym tytule
                 raw_candidates = [c for c in group if c.is_raw]
                 canonical_candidates = [c for c in group if not c.is_raw]
-                same_type = len({c.is_alert for c in group}) == 1
+                same_type = len({(c.is_alert, c.is_recording) for c in group}) == 1
 
                 if len(raw_candidates) == 1 and len(canonical_candidates) == 1 and same_type:
                     winner = raw_candidates[0]
