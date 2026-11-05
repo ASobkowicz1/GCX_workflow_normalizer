@@ -1,9 +1,9 @@
 apiVersion: folder.grafana.app/v1
 kind: Folder
 metadata:
-  name: f-acc78626617f431cd4ed
+  name: f-4085464cdf0c8ab36987
   annotations:
     grafana.app/folder: f-fc165432936809ead826
 spec:
-  title: rulerec
+  title: rulerec_change
   description: ''
