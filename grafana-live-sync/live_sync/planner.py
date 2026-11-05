@@ -211,7 +211,7 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
         lines.append("## Validation Issues ⚠️")
         for issue in plan.issues:
             icon = "❌" if issue.severity == "ERROR" else "⚠️"
-            lines.append(f"{icon} {issue.severity} - `{issue.path.name}`: {issue.message}")
+            lines.append(f"{icon} `{issue.path.name}`: {issue.message}")
         lines.append("")
 
     if not plan.items:

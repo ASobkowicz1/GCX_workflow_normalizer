@@ -20,14 +20,9 @@ def test_reconcile_example_repo_copy(tmp_path: Path) -> None:
 
     # Surowe pliki .json i modify-export-*.yaml powinny zostać usunięte
     assert not (test_data / "PRD - Applications" / "Series active-1793109192093.json").exists()
+    assert not (test_data / "PRD - Infrastructure" / "Usage" / "Active users-1793109129935.json").exists()
     assert not (
-        test_data / "PRD - Infrastructure" / "Usage" / "Active users-1793109129935.json"
-    ).exists()
-    assert not (
-        test_data
-        / "PRD - Infrastructure"
-        / "Usage"
-        / "modify-export-Usage alerts-cg2hxgz5619fkd-1793109505220.yaml"
+        test_data / "PRD - Infrastructure" / "Usage" / "modify-export-Usage alerts-cg2hxgz5619fkd-1793109505220.yaml"
     ).exists()
 
     # Pliki readme.md powinny pozostać nietknięte
@@ -43,17 +38,12 @@ def test_reconcile_example_repo_copy(tmp_path: Path) -> None:
     assert (test_data / "PRD - Infrastructure" / "Usage" / "a-usage-alert.yaml").exists()
 
     # Sprawdźmy relację rodzic-dziecko pomiędzy folderami PRD - Infrastructure -> Usage
-    parent_folder = yaml.safe_load(
-        (test_data / "PRD - Infrastructure" / "folder.yaml").read_text(encoding="utf-8")
-    )
+    parent_folder = yaml.safe_load((test_data / "PRD - Infrastructure" / "folder.yaml").read_text(encoding="utf-8"))
     child_folder = yaml.safe_load(
         (test_data / "PRD - Infrastructure" / "Usage" / "folder.yaml").read_text(encoding="utf-8")
     )
     assert "annotations" not in parent_folder["metadata"]
-    assert (
-        child_folder["metadata"]["annotations"]["grafana.app/folder"]
-        == parent_folder["metadata"]["name"]
-    )
+    assert child_folder["metadata"]["annotations"]["grafana.app/folder"] == parent_folder["metadata"]["name"]
 
     # 2. Drugie uruchomienie na tym samym katalogu: 100% IDEMPOTENTNOŚĆ (zero zapisanych/usuniętych plików)
     res2 = reconcile_data_directory(test_data)
@@ -86,10 +76,10 @@ def test_depth_limit_exceeded_ignored_with_warning(tmp_path: Path) -> None:
     # Zasób na 4. poziomie zagnieżdżenia (5. od data/) został poprawnie znormalizowany
     assert (allowed_l4_dir / "d-valid-l4-dash.yaml").exists()
     assert (allowed_l4_dir / "folder.yaml").exists()
-    # Zasób na 5. poziomie zagnieżdżenia (6. od data/) został zignorowany z ostrzeżeniem (depth 5, max allowed is 4)
+    # Zasób na 5. poziomie zagnieżdżenia (6. od data/) został zignorowany z ostrzeżeniem (depth 5, max is 4)
     assert len(res.issues) == 1
     assert res.issues[0].severity == IssueSeverity.WARNING
-    assert "is at depth 5 (max allowed is 4)" in res.issues[0].message
+    assert "is at depth 5 (max is 4)" in res.issues[0].message
     assert raw_dash.exists()
     assert not (deep_dir / "folder.yaml").exists()
 
@@ -407,4 +397,3 @@ def test_reconcile_migrates_alert_and_recording_rules_to_new_api_version(tmp_pat
     updated_rec = yaml.safe_load(rec_path.read_text(encoding="utf-8"))
     assert updated_rec["apiVersion"] == "rules.alerting.grafana.app/v1beta1"
     assert updated_rec["metadata"]["name"] == expected_rec_uid
-

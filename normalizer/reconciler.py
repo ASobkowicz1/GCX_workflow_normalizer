@@ -76,9 +76,7 @@ def _expand_parsed_file_to_candidates(
                     if is_rec:
                         rec_val = rule.get("record") if "record" in rule else rule.get("metric")
                         if isinstance(rec_val, dict):
-                            rule_title = (
-                                rec_val.get("metric") or rec_val.get("name") or "recording-rule"
-                            )
+                            rule_title = rec_val.get("metric") or rec_val.get("name") or "recording-rule"
                         elif isinstance(rec_val, str) and rec_val:
                             rule_title = rec_val
                         else:
@@ -258,7 +256,7 @@ def reconcile_data_directory(
                             severity=IssueSeverity.WARNING,
                             message=(
                                 f"Folder '{canonical_path}' is at depth {user_depth} "
-                                f"(max allowed is {user_max_depth}). File is ignored."
+                                f"(max is {user_max_depth}). File is ignored."
                             ),
                         )
                     )
