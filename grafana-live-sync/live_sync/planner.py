@@ -115,9 +115,7 @@ def build_live_state_plan(
             ):
                 continue
 
-            kind, name, title, folder_uid, local_spec = _extract_local_resource(
-                parsed.data, abs_path
-            )
+            kind, name, title, folder_uid, local_spec = _extract_local_resource(parsed.data, abs_path)
             key = (kind, name)
             desired_keys.add(key)
             if kind == "Folder":
@@ -207,7 +205,7 @@ def build_live_state_plan(
 
 def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str:
     """Generuje podsumowanie w stylu Terraform Plan."""
-    lines: list[str] = ["## Deploy grafana-observability (TF-style)", ""]
+    lines: list[str] = ["## Deploy grafana-observability (terraform-style)", ""]
 
     if plan.issues:
         lines.append("## Validation Issues ⚠️")
@@ -218,9 +216,7 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
 
     if not plan.items:
         prefix = "## No changes applied" if is_apply else "## No changes"
-        lines.append(
-            f"{prefix}. Grafana state matches repository (0 to add, 0 to change, 0 to destroy)."
-        )
+        lines.append(f"{prefix}. Grafana state matches repository (0 to add, 0 to change, 0 to destroy).")
         return "\n".join(lines)
 
     symbols = {
@@ -232,11 +228,7 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
     lines.append("```diff")
     for item in plan.items:
         sym = symbols[item.action]
-        location = (
-            item.canonical_folder
-            if item.kind == "Folder"
-            else f"{item.canonical_folder}/{item.title}"
-        )
+        location = item.canonical_folder if item.kind == "Folder" else f"{item.canonical_folder}/{item.title}"
         lines.append(f'{sym} {item.kind:<10} "{location}" ({item.name})')
     lines.append("```")
     lines.append("")
@@ -255,9 +247,7 @@ def build_gcx_delta_commands(
     """Generuje bezpieczną listę komend dla GCX obejmującą wyłącznie zasoby różniące się od stanu Grafany."""
     commands: list[list[str]] = []
 
-    push_items = [
-        i for i in plan.items if i.action in (PlanActionType.CREATE, PlanActionType.UPDATE)
-    ]
+    push_items = [i for i in plan.items if i.action in (PlanActionType.CREATE, PlanActionType.UPDATE)]
     destroy_items = [i for i in plan.items if i.action == PlanActionType.DESTROY]
     kind_to_plural = {
         "Dashboard": "dashboards",
@@ -291,10 +281,7 @@ def build_gcx_delta_commands(
 
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:
-        selectors = [
-            f"{kind_to_plural.get(i.kind, f'{i.kind.lower()}s')}/{i.name}"
-            for i in resource_destroys
-        ]
+        selectors = [f"{kind_to_plural.get(i.kind, f'{i.kind.lower()}s')}/{i.name}" for i in resource_destroys]
         cmd = [gcx_bin, "resources", "delete", *selectors, "-y"]
         commands.append(cmd)
 

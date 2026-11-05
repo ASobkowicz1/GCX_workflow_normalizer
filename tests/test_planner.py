@@ -82,7 +82,7 @@ def test_full_git_lifecycle_create_update_destroy(tmp_path: Path) -> None:
     assert all(item.kind != "Folder" for item in plan.items)
 
     summary = format_terraform_summary(plan, is_apply=False)
-    assert "## Deploy grafana-observability (TF-style)" in summary
+    assert "## Deploy grafana-observability (terraform-style)" in summary
     assert "Plan: 1 to add, 1 to change, 1 to destroy." in summary
     assert '+ Dashboard  "PRD/Azure/Network"' in summary
     assert '~ Dashboard  "PRD/Azure/VM Overview"' in summary
@@ -206,5 +206,3 @@ def test_full_push_pushes_all_files(tmp_path: Path) -> None:
     assert len(plan_sync.to_add) == 2  # Folder PRD + Dashboard Sync Dash
     assert len(plan_sync.to_change) == 0
     assert len(plan_sync.to_destroy) == 0
-
-

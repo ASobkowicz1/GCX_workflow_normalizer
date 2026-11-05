@@ -1,9 +1,9 @@
 apiVersion: rules.alerting.grafana.app/v1beta1
 kind: AlertRule
 metadata:
-  name: a-1e230b905d8b5fb6ce3c
+  name: a-65ef411cc6632ca4d23d
   annotations:
-    grafana.app/folder: f-d8f2bfb1ae11685dc4a7
+    grafana.app/folder: f-fc165432936809ead826
 spec:
   title: test alr
   for: 1m

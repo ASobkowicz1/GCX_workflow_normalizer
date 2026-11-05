@@ -17,7 +17,7 @@ Identyfikatory zasobów (`metadata.name`) są wyliczane deterministycznie jako s
 - `parser.py` – rozpoznawanie typów plików (odróżnianie surowych eksportów Dashboard/AlertRule z UI od gotowych manifestów kanonicznych GCX oraz ignorowanie plików niemaniestowych np. `.md`).
 - `transformer.py` – konwersja surowych struktur JSON/YAML do schematów API Grafany (`folder.grafana.app/v1beta1`, `dashboard.grafana.app/v2` i `v1beta1`, `rules.alerting.grafana.app/v0alpha1`) wraz z czyszczeniem metadanych instancji źródłowej.
 - `reconciler.py` – operacje na drzewie katalogów `data/`: wykrywanie kolizji nazw i przekroczeń limitu 4 poziomów, zapis znormalizowanych plików YAML, usuwanie surowych eksportów oraz automatyczne tworzenie i czyszczenie pustych plików `folder.yaml` (algorytm Bottom-Up).
-- `planner.py` – wyliczanie delty zmian z `git diff`, odczytywanie metadanych usuniętych plików z historii Gita (`git show`), ochrona przed konfliktem `CREATE+DESTROY` tego samego UID, generowanie raportu `Deploy grafana-observability (TF-style)` oraz budowanie komend `gcx resources push/delete`.
+- `planner.py` – wyliczanie delty zmian z `git diff`, odczytywanie metadanych usuniętych plików z historii Gita (`git show`), ochrona przed konfliktem `CREATE+DESTROY` tego samego UID, generowanie raportu `Deploy grafana-observability (terraform-style)` oraz budowanie komend `gcx resources push/delete`.
 - `cli.py` / `__main__.py` – interfejs wiersza poleceń (`python -m normalizer <mode>`) obsługujący trzy tryby pracy w pipeline CI/CD.
 
 ---

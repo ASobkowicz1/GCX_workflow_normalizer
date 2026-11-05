@@ -1,9 +1,9 @@
 apiVersion: rules.alerting.grafana.app/v1beta1
 kind: AlertRule
 metadata:
-  name: a-af32aca203f8016a4026
+  name: a-187b6e11fdd64cfb9c31
   annotations:
-    grafana.app/folder: f-1f11106a7ea764cdbbb9
+    grafana.app/folder: f-f5b6c1cb8cc6dc99b7ea
 spec:
   title: Usage alert
   for: 1m

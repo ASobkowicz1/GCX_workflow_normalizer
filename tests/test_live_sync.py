@@ -367,5 +367,5 @@ def test_live_sync_cli_plan_summary_file(tmp_path: Path) -> None:
     assert exit_code == 0
     assert summary_file.exists()
     content = summary_file.read_text(encoding="utf-8")
-    assert "## Deploy grafana-observability (TF-style)" in content
+    assert "## Deploy grafana-observability (terraform-style)" in content
     assert "Plan: 2 to add" in content

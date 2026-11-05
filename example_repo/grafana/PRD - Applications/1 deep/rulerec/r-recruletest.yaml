@@ -1,9 +1,9 @@
 apiVersion: rules.alerting.grafana.app/v1beta1
 kind: RecordingRule
 metadata:
-  name: r-5754b6d2f20b3a752da4
+  name: r-07384df18342b1ebf12d
   annotations:
-    grafana.app/folder: f-3ee6a5d75e826160d0a5
+    grafana.app/folder: f-acc78626617f431cd4ed
 spec:
   title: recruletest
   metric: recruletest

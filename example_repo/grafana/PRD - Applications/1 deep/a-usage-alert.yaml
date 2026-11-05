@@ -1,11 +1,11 @@
 apiVersion: rules.alerting.grafana.app/v1beta1
 kind: AlertRule
 metadata:
-  name: a-52d35c888fe57405fbe2
+  name: a-d783ba3e17a99785ca53
   annotations:
-    grafana.app/folder: f-d8f2bfb1ae11685dc4a7
+    grafana.app/folder: f-fc165432936809ead826
 spec:
-  title: costam
+  title: Usage alert
   for: 1m
   noDataState: NoData
   execErrState: Error
@@ -14,16 +14,16 @@ spec:
       model:
         datasource:
           type: prometheus
-          uid: grafanacloud-play-prom
-        editorMode: builder
-        expr: alloy_build_info
+          uid: grafanacloud-usage
+        editorMode: code
+        expr: grafanacloud_grafana_instance_active_users
         instant: true
         intervalMs: 1000
         legendFormat: __auto
         maxDataPoints: 43200
         range: false
         refId: A
-      datasourceUID: grafanacloud-play-prom
+      datasourceUID: grafanacloud-usage
       relativeTimeRange:
         from: 600s
         to: 0s
@@ -32,7 +32,7 @@ spec:
         conditions:
         - evaluator:
             params:
-            - 0
+            - 2
             type: gt
           operator:
             type: and

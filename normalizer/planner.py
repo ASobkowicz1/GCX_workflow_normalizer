@@ -94,11 +94,7 @@ def build_delta_plan(
     data_root = (repo_root / data_subdir).resolve()
     plan = ExecutionPlan(issues=list(issues) if issues else [])
 
-    effective_base = (
-        GIT_EMPTY_TREE_HASH
-        if full_push
-        else _resolve_effective_base_ref(repo_root, base_ref, target_ref)
-    )
+    effective_base = GIT_EMPTY_TREE_HASH if full_push else _resolve_effective_base_ref(repo_root, base_ref, target_ref)
 
     # 1. Pobranie zmian śledzonych przez Git względem effective_base
     diff_args = ["diff", "--name-status", "--no-renames", effective_base]
@@ -203,10 +199,7 @@ def build_delta_plan(
             raw_old_meta = old_data.get("metadata")
             old_meta: dict[str, Any] = raw_old_meta if isinstance(raw_old_meta, dict) else {}
             has_server_fields = (
-                any(
-                    k in old_meta
-                    for k in ("uid", "resourceVersion", "generation", "managedFields")
-                )
+                any(k in old_meta for k in ("uid", "resourceVersion", "generation", "managedFields"))
                 or "status" in old_data
             )
             if not is_managed_uid(name) or has_server_fields:
@@ -227,13 +220,9 @@ def build_delta_plan(
     # 4. Ochrona przed jednoczesnym CREATE + DESTROY tego samego UID (np. gdy zmieniła się tylko nazwa pliku na dysku):
     # Jeśli dany (kind, name) jest obecny w CREATE lub UPDATE, nie możemy go skasować w DESTROY!
     active_keys = {
-        (item.kind, item.name)
-        for item in plan.items
-        if item.action in (PlanActionType.CREATE, PlanActionType.UPDATE)
+        (item.kind, item.name) for item in plan.items if item.action in (PlanActionType.CREATE, PlanActionType.UPDATE)
     }
-    destroyed_keys = {
-        (item.kind, item.name) for item in plan.items if item.action == PlanActionType.DESTROY
-    }
+    destroyed_keys = {(item.kind, item.name) for item in plan.items if item.action == PlanActionType.DESTROY}
     overlapping_keys = active_keys & destroyed_keys
 
     if overlapping_keys:
@@ -270,22 +259,20 @@ def build_delta_plan(
 def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str:
     """
     Generuje zwięzłe i czytelne podsumowanie w stylu Terraform Plan (blok diff)
-    zatytułowane `Deploy grafana-observability (TF-style)`.
+    zatytułowane `Deploy grafana-observability (terraform-style)`.
     """
-    lines: list[str] = ["## Deploy grafana-observability (TF-style)", ""]
+    lines: list[str] = ["## Deploy grafana-observability (terraform-style)", ""]
 
     if plan.issues:
         lines.append("## Validation Issues ⚠️")
         for issue in plan.issues:
             icon = "❌" if issue.severity == "ERROR" else "⚠️"
-            lines.append(f"{icon} {issue.severity} - `{issue.path.name}`: {issue.message}")
+            lines.append(f"{icon} - `{issue.path.name}`: {issue.message}")
         lines.append("")
 
     if not plan.items:
         prefix = "No changes applied" if is_apply else "No changes"
-        lines.append(
-            f"{prefix}. Resources are up-to-date (0 to add, 0 to change, 0 to destroy)."
-        )
+        lines.append(f"{prefix}. Resources are up-to-date (0 to add, 0 to change, 0 to destroy).")
         return "\n".join(lines)
 
     symbols = {
@@ -297,11 +284,7 @@ def format_terraform_summary(plan: ExecutionPlan, is_apply: bool = False) -> str
     lines.append("```diff")
     for item in plan.items:
         sym = symbols[item.action]
-        location = (
-            item.canonical_folder
-            if item.kind == "Folder"
-            else f"{item.canonical_folder}/{item.title}"
-        )
+        location = item.canonical_folder if item.kind == "Folder" else f"{item.canonical_folder}/{item.title}"
         lines.append(f'{sym} {item.kind:<10} "{location}" ({item.name})')
     lines.append("```")
     lines.append("")
@@ -328,9 +311,7 @@ def build_gcx_delta_commands(
     """
     commands: list[list[str]] = []
 
-    push_items = [
-        i for i in plan.items if i.action in (PlanActionType.CREATE, PlanActionType.UPDATE)
-    ]
+    push_items = [i for i in plan.items if i.action in (PlanActionType.CREATE, PlanActionType.UPDATE)]
     destroy_items = [i for i in plan.items if i.action == PlanActionType.DESTROY]
     kind_to_plural = {
         "Dashboard": "dashboards",
@@ -372,10 +353,7 @@ def build_gcx_delta_commands(
     # 2. Delete usuniętych Dashboardów i AlertRules
     resource_destroys = [i for i in destroy_items if i.kind != "Folder"]
     if resource_destroys:
-        selectors = [
-            f"{kind_to_plural.get(i.kind, f'{i.kind.lower()}s')}/{i.name}"
-            for i in resource_destroys
-        ]
+        selectors = [f"{kind_to_plural.get(i.kind, f'{i.kind.lower()}s')}/{i.name}" for i in resource_destroys]
         cmd = [gcx_bin, "resources", "delete", *selectors, "-y"]
         commands.append(cmd)
 

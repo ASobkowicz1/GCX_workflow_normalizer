@@ -1,9 +1,9 @@
 apiVersion: dashboard.grafana.app/v2
 kind: Dashboard
 metadata:
-  name: d-241f09b2639de61e1177
+  name: d-5653a735bf3d4257ca0e
   annotations:
-    grafana.app/folder: f-dfacd9b9df9374885736
+    grafana.app/folder: f-3b44d1187f462970fa99
 spec:
   annotations:
   - kind: AnnotationQuery
