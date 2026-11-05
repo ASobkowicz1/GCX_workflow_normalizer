@@ -33,7 +33,8 @@ from live_sync.transformer import (
 )
 
 FOLDER_MANIFEST_NAME = "folder.yaml"
-MAX_GRAFANA_FOLDER_DEPTH = 4
+# 1 poziom folderu głównego (L0) + maks. 4 poziomy zagnieżdżeń podfolderów w Grafanie (L1..L4) = 5 poziomów względem katalogu `grafana/`
+MAX_GRAFANA_FOLDER_DEPTH = 5
 
 
 @dataclass
@@ -246,6 +247,8 @@ def reconcile_data_directory(
         files_in_dir = sorted([f for f in folder_dir.iterdir() if f.is_file()])
 
         if depth > max_depth:
+            user_depth = depth - 1
+            user_max_depth = max_depth - 1
             for f in files_in_dir:
                 parsed = detect_and_parse(f)
                 if parsed.kind not in (FileKind.IGNORED,):
@@ -254,8 +257,8 @@ def reconcile_data_directory(
                             path=f,
                             severity=IssueSeverity.WARNING,
                             message=(
-                                f"Folder '{canonical_path}' is at depth {depth} "
-                                f"(max allowed is {max_depth}). File is ignored."
+                                f"Folder '{canonical_path}' is at depth {user_depth} "
+                                f"(max allowed is {user_max_depth}). File is ignored."
                             ),
                         )
                     )

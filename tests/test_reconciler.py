@@ -64,9 +64,17 @@ def test_reconcile_example_repo_copy(tmp_path: Path) -> None:
 
 
 def test_depth_limit_exceeded_ignored_with_warning(tmp_path: Path) -> None:
-    # Tworzymy 5 poziomów zagnieżdżenia: L1 / L2 / L3 / L4 / L5
-    deep_dir = tmp_path / "L1" / "L2" / "L3" / "L4" / "L5"
+    # Folder główny (L0) + 4 poziomy zagnieżdżenia (L1/L2/L3/L4) -> DOZWOLONE w Grafanie (razem 5 katalogów od data/)
+    allowed_l4_dir = tmp_path / "Root" / "L1" / "L2" / "L3" / "L4"
+    # 5 poziom zagnieżdżenia (L5) -> PRZEKRACZA limit 4 zagnieżdżeń w Grafanie (razem 6 katalogów od data/)
+    deep_dir = allowed_l4_dir / "L5"
     deep_dir.mkdir(parents=True)
+
+    valid_dash = allowed_l4_dir / "valid-l4.json"
+    valid_dash.write_text(
+        json.dumps({"title": "Valid L4 Dash", "schemaVersion": 39, "panels": []}),
+        encoding="utf-8",
+    )
     raw_dash = deep_dir / "too-deep.json"
     raw_dash.write_text(
         json.dumps({"title": "Too Deep Dash", "schemaVersion": 39, "panels": []}),
@@ -75,10 +83,13 @@ def test_depth_limit_exceeded_ignored_with_warning(tmp_path: Path) -> None:
 
     res = reconcile_data_directory(tmp_path)
     assert not res.has_errors
+    # Zasób na 4. poziomie zagnieżdżenia (5. od data/) został poprawnie znormalizowany
+    assert (allowed_l4_dir / "d-valid-l4-dash.yaml").exists()
+    assert (allowed_l4_dir / "folder.yaml").exists()
+    # Zasób na 5. poziomie zagnieżdżenia (6. od data/) został zignorowany z ostrzeżeniem (depth 5, max allowed is 4)
     assert len(res.issues) == 1
     assert res.issues[0].severity == IssueSeverity.WARNING
-    assert "depth 5" in res.issues[0].message
-    # Plik na 5 poziomie nie został ruszony i nie utworzono folder.yaml
+    assert "is at depth 5 (max allowed is 4)" in res.issues[0].message
     assert raw_dash.exists()
     assert not (deep_dir / "folder.yaml").exists()
 

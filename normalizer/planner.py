@@ -15,6 +15,7 @@ from normalizer.models import (
 )
 from normalizer.parser import detect_and_parse
 from normalizer.paths import get_canonical_folder_path, get_folder_depth, is_managed_uid
+from normalizer.reconciler import MAX_GRAFANA_FOLDER_DEPTH
 
 # Stały identyfikator pustego drzewa w Git (używany gdy github.event.before to 40 zer lub brak rodzica)
 GIT_EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -136,6 +137,8 @@ def build_delta_plan(
         if canonical_folder is None:
             continue
         depth = get_folder_depth(canonical_folder)
+        if depth > MAX_GRAFANA_FOLDER_DEPTH:
+            continue
 
         if status in ("A", "M"):
             if not abs_path.exists():
